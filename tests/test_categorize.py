@@ -7,7 +7,7 @@ import pytest
 from ado_defect_analysis.config import AdoConfig, Config, LlmConfig
 from ado_defect_analysis.llm.base import LlmProvider, LlmProviderError
 from ado_defect_analysis.models import Defect
-from ado_defect_analysis.pipeline.categorize import run_categorize
+from ado_defect_analysis.pipeline.categorize import _build_batches, run_categorize
 from ado_defect_analysis.storage import DefectStore
 
 
@@ -195,6 +195,55 @@ def test_force_overrides_the_unchanged_skip(tmp_path: Path):
     count = run_categorize(config, provider=FakeProvider(), recategorize_all=True, force=True)
 
     assert count == 1
+
+
+def test_fixed_strategy_chunks_in_arrival_order():
+    defects = [_defect(i, module="A" if i % 2 else "B") for i in range(1, 6)]
+
+    batches = _build_batches(defects, batch_size=2, strategy="fixed")
+
+    assert [[d.id for d in b] for b in batches] == [[1, 2], [3, 4], [5]]
+
+
+def test_module_strategy_groups_by_area_path_without_exceeding_batch_size():
+    defects = [
+        _defect(1, module="Checkout"),
+        _defect(2, module="Search"),
+        _defect(3, module="Checkout"),
+        _defect(4, module="Checkout"),
+    ]
+
+    batches = _build_batches(defects, batch_size=2, strategy="module")
+
+    # Checkout's three split across two batches; Search never shares one.
+    assert [[d.id for d in b] for b in batches] == [[1, 3], [4], [2]]
+    assert all(len({d.module for d in batch}) == 1 for batch in batches)
+
+
+def test_unknown_strategy_falls_back_to_fixed(caplog):
+    defects = [_defect(i) for i in range(1, 4)]
+
+    with caplog.at_level(logging.WARNING):
+        batches = _build_batches(defects, batch_size=2, strategy="by-vibes")
+
+    assert [[d.id for d in b] for b in batches] == [[1, 2], [3]]
+    assert "Unknown batch strategy" in caplog.text
+
+
+def test_module_batching_categorizes_everything(tmp_path: Path):
+    """End to end: the strategy change must not lose or duplicate defects."""
+    config = _config(tmp_path)
+    config.llm.batch_strategy = "module"
+    config.llm.categorize_batch_size = 2
+    store = DefectStore(config.db_path)
+    store.upsert_defects(
+        [_defect(i, module="Checkout" if i < 4 else "Search") for i in range(1, 7)]
+    )
+
+    count = run_categorize(config, provider=FakeProvider())
+
+    assert count == 6
+    assert len(store.get_categorized_defects()) == 6
 
 
 def test_run_categorize_records_provenance(tmp_path: Path):

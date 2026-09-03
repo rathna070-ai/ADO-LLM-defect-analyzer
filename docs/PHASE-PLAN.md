@@ -106,17 +106,25 @@ upserting by id so re-running fetch — from either source — is safe.
 - Categorization provenance (`model`, `prompt_version`, `categorized_at`) and a
   confidence-driven `needs_review.csv` triage export.
 
-## Phase 7 — Remaining candidates (not started)
+## Phase 7 — Efficiency, validation, and reporting controls (done)
 
-- Content-hash skip on re-categorize, so `--recategorize-all` only re-spends on
-  defects whose input fields actually changed.
-- Strict `jsonschema` validation of LLM responses (today's hand-rolled enum checks
-  are deliberately lenient: invalid value → `unknown` + warning).
-- Token/cost tracking per run from the provider `usage` field.
-- A `--since`/`--until` CLI flag for report and export, so a quarter's narrative
-  doesn't have to mean "everything in the DB."
-- Batch categorization by module instead of fixed-size groups, if accuracy on
-  cross-module batches turns out to be worse in practice.
+- **Content-hash skip** — each categorization stores an `input_hash` of the exact
+  fields the model was shown. `--recategorize-all` skips any defect whose hash,
+  prompt version, and model all match the stored answer, so a backfill only spends
+  on work that could actually come out differently. `--force` overrides it.
+- **Schema validation** — responses are checked against
+  `categorize_defect.schema.json` with `jsonschema`. The default logs the offending
+  field path and falls back to the existing lenient per-field handling;
+  `LLM_STRICT_SCHEMA=true` rejects the batch instead.
+- **Token/cost tracking** — providers accumulate prompt/completion tokens from each
+  response's `usage` block, and categorize and report log a run summary. Optional
+  `LLM_COST_PER_MTOK_INPUT`/`_OUTPUT` add a dollar estimate; they default to 0 so
+  no stale prices are baked in.
+- **`--since`/`--until`** on report, export, and run-all, filtering by closed date.
+  `--until` covers the whole end day; undated defects drop out once a bound is set.
+- **Batch strategy** — `LLM_BATCH_STRATEGY=module` groups each area path into its
+  own batches so they share context; `fixed` (the default) keeps prompt length
+  predictable.
 
 ## Phase 8 — Copilot provider (future, placeholder only)
 

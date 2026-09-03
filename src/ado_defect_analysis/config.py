@@ -89,6 +89,10 @@ class LlmConfig:
     # Blank it out for a provider or model that rejects the parameter.
     reasoning_effort: str = "low"
     categorize_batch_size: int = 10
+    # "fixed" chunks defects in arrival order, keeping prompt length uniform.
+    # "module" groups each area path together first, so a batch shares context
+    # — worth trying if cross-module batches prove less accurate in practice.
+    batch_strategy: str = "fixed"
     # When false (the default), a response that violates the JSON schema is
     # logged with the offending path and then handled leniently — bad enum
     # values become "unknown" rather than losing the whole batch. Turn it on
@@ -154,6 +158,7 @@ class Config:
             cost_per_mtok_input=float(os.environ.get("LLM_COST_PER_MTOK_INPUT", "0")),
             cost_per_mtok_output=float(os.environ.get("LLM_COST_PER_MTOK_OUTPUT", "0")),
             categorize_batch_size=_env_int("LLM_CATEGORIZE_BATCH_SIZE", 10),
+            batch_strategy=os.environ.get("LLM_BATCH_STRATEGY", "fixed").lower(),
         )
         db_path = _env_path("DEFECT_DB_PATH", cls.db_path)
         output_dir = _env_path("DEFECT_OUTPUT_DIR", cls.output_dir)

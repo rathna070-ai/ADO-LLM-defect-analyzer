@@ -61,8 +61,25 @@ change, a model change, or a new categorization field, backfill everything with:
 ado-defect-analysis categorize --recategorize-all
 ```
 
-Every categorization records the model, a prompt fingerprint, and a timestamp, so
-you can tell which rows came from which prompt revision and re-run selectively.
+Every categorization records the model, a prompt fingerprint, a timestamp, and a
+hash of the fields the model was shown. A re-run **skips any defect where all
+three of those inputs are unchanged**, since re-asking would buy the same answer
+at full token price — so backfilling one new field costs only the defects it
+actually affects. Add `--force` to re-send everything anyway (e.g. to resample a
+non-deterministic model).
+
+Each run logs what it spent: `12 LLM call(s), 41,204 prompt + 9,102 completion =
+50,306 tokens`. Set `LLM_COST_PER_MTOK_INPUT`/`_OUTPUT` to your model's current
+rates to get a dollar estimate alongside it.
+
+### Scoping to a date range
+
+`report`, `export`, and `run-all` accept `--since`/`--until` (on closed date), so a
+quarterly summary doesn't have to mean everything in the database:
+
+```bash
+ado-defect-analysis report --since 2026-01-01 --until 2026-03-31
+```
 
 ### Trusting the output
 

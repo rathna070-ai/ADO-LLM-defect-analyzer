@@ -1,11 +1,11 @@
 """Phase 2: batch uncategorized defects to the LLM for structured root-cause
 classification.
 
-Batching is by fixed group size, not by module/sprint as a first cut — the
-prompt gives the model each defect's module already, and grouping by a fixed
-size keeps prompt length predictable regardless of how lopsided the module
-distribution is. Swap in a group-by-module batcher later if per-module
-context turns out to matter for accuracy.
+Batching defaults to fixed group size, which keeps prompt length predictable
+regardless of how lopsided the module distribution is, and the prompt gives
+the model each defect's module anyway. `LLM_BATCH_STRATEGY=module` groups each
+area path together instead, so a batch shares product context — worth trying
+if cross-module batches turn out to be less accurate in practice.
 """
 
 from __future__ import annotations
@@ -73,11 +73,11 @@ def run_categorize(
         )
         return 0
 
-    batch_size = config.llm.categorize_batch_size
+    batches = _build_batches(pending, config.llm.categorize_batch_size, config.llm.batch_strategy)
     total = 0
     failed_batches = 0
-    for start in range(0, len(pending), batch_size):
-        batch = pending[start : start + batch_size]
+    done = 0
+    for index, batch in enumerate(batches, start=1):
         # One bad batch (a dropped defect id, a malformed response, an
         # exhausted retry) shouldn't throw away every batch still queued
         # behind it — log it and keep going.
@@ -86,19 +86,13 @@ def run_categorize(
         except LlmProviderError:
             failed_batches += 1
             logger.exception(
-                "Batch %d-%d failed; continuing with the next batch.",
-                start + 1,
-                start + len(batch),
+                "Batch %d of %d failed; continuing with the next batch.", index, len(batches)
             )
             continue
         store.save_categorizations(categorizations)
         total += len(categorizations)
-        logger.info(
-            "Categorized defects %d-%d of %d.",
-            start + 1,
-            start + len(batch),
-            len(pending),
-        )
+        done += len(batch)
+        logger.info("Categorized %d of %d defect(s).", done, len(pending))
 
     logger.info(
         "Categorize run used %s.",
@@ -114,6 +108,36 @@ def run_categorize(
                 f"All {failed_batches} categorization batch(es) failed; see the log for details."
             )
     return total
+
+
+def _build_batches(
+    defects: list[Defect], batch_size: int, strategy: str = "fixed"
+) -> list[list[Defect]]:
+    """Group defects into prompt-sized batches.
+
+    "fixed" chunks in arrival order, which keeps prompt length predictable
+    however lopsided the module distribution is. "module" groups each area
+    path together first — the same batch then shares product context, at the
+    cost of some short batches wherever a module has few defects. Either way
+    no batch exceeds `batch_size`.
+    """
+    if strategy not in ("fixed", "module"):
+        logger.warning("Unknown batch strategy %r; falling back to 'fixed'.", strategy)
+        strategy = "fixed"
+
+    if strategy == "fixed":
+        groups = [defects]
+    else:
+        by_module: dict[str, list[Defect]] = {}
+        for defect in defects:
+            by_module.setdefault(defect.module, []).append(defect)
+        groups = [by_module[module] for module in sorted(by_module)]
+
+    return [
+        group[start : start + batch_size]
+        for group in groups
+        for start in range(0, len(group), batch_size)
+    ]
 
 
 def _drop_unchanged(defects: list[Defect], store: DefectStore, model_name: str) -> list[Defect]:
