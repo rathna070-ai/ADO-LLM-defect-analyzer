@@ -20,6 +20,9 @@ DEFAULT_REJECTED_RESOLUTIONS = [
     "By Design",
     "Won't Fix",
     "Not a Bug",
+    # Some processes record the rejection as a workflow state rather than a
+    # resolution, so the same list is matched against both fields.
+    "Rejected",
 ]
 
 

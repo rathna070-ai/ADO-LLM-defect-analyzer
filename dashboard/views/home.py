@@ -8,18 +8,27 @@ this tool have different access: some can hand over a PAT, some only have
 from __future__ import annotations
 
 import tempfile
+import time
 from pathlib import Path
 
 import streamlit as st
 
 from ado_defect_analysis.ado_query import AdoQueryUrlError, parse_query_url
 from ado_defect_analysis.config import Config
-from ado_defect_analysis.pipeline.categorize import run_categorize
+from ado_defect_analysis.pipeline.categorize import CategorizeProgress, run_categorize
 from ado_defect_analysis.pipeline.fetch import run_fetch_from_excel, run_fetch_from_query
 from ado_defect_analysis.storage import DefectStore
 
 _UPLOAD = "Upload a file from my computer"
 _QUERY = "Azure DevOps query link"
+#: Observed round-trip for one 10-defect batch, used only for the estimate.
+_SECONDS_PER_BATCH = 15
+
+
+def _format_duration(seconds: float) -> str:
+    if seconds < 90:
+        return f"{max(int(seconds), 1)} seconds"
+    return f"{seconds / 60:.0f} minutes"
 
 
 def render(config: Config) -> None:
@@ -130,10 +139,6 @@ def _render_analysis_section(config: Config) -> None:
         return
 
     model = config.llm.groq_model if config.llm.provider == "groq" else config.llm.copilot_model
-    st.markdown(
-        f"Sends the {pending or categorized} defect(s) to **{model}** in batches for "
-        "root-cause and SDLC-phase classification."
-    )
     redo = st.checkbox(
         "Re-analyze defects that already have results",
         help=(
@@ -142,14 +147,49 @@ def _render_analysis_section(config: Config) -> None:
         ),
     )
 
-    if st.button("Run analysis", type="primary"):
+    queued = loaded if redo else pending
+    batch_size = config.llm.categorize_batch_size
+    batches = max(1, -(-queued // batch_size)) if queued else 0
+    st.markdown(
+        f"Sends {queued} defect(s) to **{model}** in {batches} batch(es) of {batch_size} "
+        "for root-cause and SDLC-phase classification."
+    )
+    if batches:
+        # Measured at roughly 15s per batch; worth saying out loud, because a
+        # few hundred defects is minutes, not seconds.
+        st.caption(
+            f"Expect roughly {_format_duration(batches * _SECONDS_PER_BATCH)}. Each batch is "
+            "saved as it finishes, so nothing is lost if you close the tab — reopen it and "
+            "run again to pick up where it stopped."
+        )
+
+    if st.button("Run analysis", type="primary", disabled=not queued):
+        progress_bar = st.progress(0.0)
+        status = st.empty()
+        started = time.monotonic()
+
+        def _report(update: CategorizeProgress) -> None:
+            fraction = update.defects_done / max(update.defects_total, 1)
+            elapsed = time.monotonic() - started
+            remaining = (elapsed / fraction - elapsed) if fraction else 0.0
+            note = f" · {update.failed_batches} batch(es) failed" if update.failed_batches else ""
+            progress_bar.progress(min(fraction, 1.0))
+            status.markdown(
+                f"Batch **{update.batch_index}/{update.batch_count}** · "
+                f"**{update.defects_done}/{update.defects_total}** defects · "
+                f"about {_format_duration(remaining)} left{note}"
+            )
+
         try:
-            with st.spinner("Classifying defects — this can take a minute…"):
-                count = run_categorize(config, recategorize_all=redo)
+            count = run_categorize(config, recategorize_all=redo, on_progress=_report)
         except Exception as exc:
+            progress_bar.empty()
+            status.empty()
             st.error(f"Analysis failed: {exc}")
             return
 
+        progress_bar.empty()
+        status.empty()
         st.success(f"Analyzed {count} defect(s).")
         st.session_state["page"] = "dashboard"
         st.rerun()

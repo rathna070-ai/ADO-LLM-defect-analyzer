@@ -113,6 +113,28 @@ def test_build_aggregates_valid_vs_rejected_uses_rejected_resolutions():
     assert result["valid_vs_rejected"] == {"valid": 2, "rejected": 1}
 
 
+def test_rejection_is_detected_from_state_when_resolution_is_blank():
+    """Some ADO processes record rejection as a workflow state, leaving
+    resolution empty — reading only resolution would call everything valid."""
+    df = _sample_df()
+    df["resolution"] = ""
+    df["state"] = ["Closed", "Rejected", "Closed"]
+
+    result = build_aggregates(df, rejected_resolutions=["Duplicate", "Rejected"])
+
+    assert result["valid_vs_rejected"] == {"valid": 2, "rejected": 1}
+
+
+def test_a_defect_rejected_in_both_fields_is_counted_once():
+    df = _sample_df()
+    df["resolution"] = ["Fixed", "Duplicate", "Fixed"]
+    df["state"] = ["Closed", "Rejected", "Closed"]
+
+    result = build_aggregates(df, rejected_resolutions=["Duplicate", "Rejected"])
+
+    assert result["valid_vs_rejected"] == {"valid": 2, "rejected": 1}
+
+
 def test_build_aggregates_rca_sdlc_crosstab():
     result = build_aggregates(_sample_df())
 

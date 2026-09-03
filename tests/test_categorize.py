@@ -7,7 +7,11 @@ import pytest
 from ado_defect_analysis.config import AdoConfig, Config, LlmConfig
 from ado_defect_analysis.llm.base import LlmProvider, LlmProviderError
 from ado_defect_analysis.models import Defect
-from ado_defect_analysis.pipeline.categorize import _build_batches, run_categorize
+from ado_defect_analysis.pipeline.categorize import (
+    CategorizeProgress,
+    _build_batches,
+    run_categorize,
+)
 from ado_defect_analysis.storage import DefectStore
 
 
@@ -244,6 +248,36 @@ def test_module_batching_categorizes_everything(tmp_path: Path):
 
     assert count == 6
     assert len(store.get_categorized_defects()) == 6
+
+
+def test_progress_is_reported_after_every_batch(tmp_path: Path):
+    """A long run has to be observable, or the UI can't tell it from a hang."""
+    config = _config(tmp_path)
+    config.llm.categorize_batch_size = 2
+    store = DefectStore(config.db_path)
+    store.upsert_defects([_defect(i) for i in range(1, 6)])
+    seen: list[CategorizeProgress] = []
+
+    run_categorize(config, provider=FakeProvider(), on_progress=seen.append)
+
+    assert [p.batch_index for p in seen] == [1, 2, 3]
+    assert [p.defects_done for p in seen] == [2, 4, 5]
+    assert {p.defects_total for p in seen} == {5}
+    assert seen[-1].defects_done == seen[-1].defects_total  # ends at 100%
+
+
+def test_progress_advances_past_a_failed_batch(tmp_path: Path):
+    """Progress must reflect work attempted, or the bar stalls on a failure."""
+    config = _config(tmp_path)
+    config.llm.categorize_batch_size = 1
+    store = DefectStore(config.db_path)
+    store.upsert_defects([_defect(1), _defect(2), _defect(3)])
+    seen: list[CategorizeProgress] = []
+
+    run_categorize(config, provider=FakeProvider(fail_ids={2}), on_progress=seen.append)
+
+    assert [p.defects_done for p in seen] == [1, 2, 3]
+    assert seen[-1].failed_batches == 1
 
 
 def test_run_categorize_records_provenance(tmp_path: Path):

@@ -13,6 +13,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -44,11 +46,30 @@ _VALID_SDLC_PHASES = set(
 )
 
 
+@dataclass(frozen=True)
+class CategorizeProgress:
+    """Emitted after each batch so a caller can show real progress.
+
+    A long run is otherwise a black box: 400 defects is 40-odd LLM round
+    trips, and a UI with nothing to report looks identical to a hang.
+    """
+
+    batch_index: int
+    batch_count: int
+    defects_done: int
+    defects_total: int
+    failed_batches: int
+
+
+ProgressCallback = Callable[[CategorizeProgress], None]
+
+
 def run_categorize(
     config: Config,
     provider: LlmProvider | None = None,
     recategorize_all: bool = False,
     force: bool = False,
+    on_progress: ProgressCallback | None = None,
 ) -> int:
     """Returns the number of defects categorized.
 
@@ -88,11 +109,23 @@ def run_categorize(
             logger.exception(
                 "Batch %d of %d failed; continuing with the next batch.", index, len(batches)
             )
-            continue
-        store.save_categorizations(categorizations)
-        total += len(categorizations)
+        else:
+            store.save_categorizations(categorizations)
+            total += len(categorizations)
+            logger.info("Categorized %d of %d defect(s).", done + len(batch), len(pending))
+        # Counted whether or not the batch succeeded, so progress reflects
+        # work attempted rather than stalling on a failure.
         done += len(batch)
-        logger.info("Categorized %d of %d defect(s).", done, len(pending))
+        if on_progress is not None:
+            on_progress(
+                CategorizeProgress(
+                    batch_index=index,
+                    batch_count=len(batches),
+                    defects_done=done,
+                    defects_total=len(pending),
+                    failed_batches=failed_batches,
+                )
+            )
 
     logger.info(
         "Categorize run used %s.",

@@ -48,6 +48,10 @@ def filter_by_closed_date(
     return df[mask]
 
 
+def _matches_rejected(df: pd.DataFrame, column: str, rejected_lower: set[str]) -> pd.Series:
+    return df[column].fillna("").astype(str).str.strip().str.lower().isin(rejected_lower)
+
+
 def needs_review_mask(df: pd.DataFrame, review_confidence_threshold: float = 0.6) -> pd.Series:
     """Rows a human should re-check before the analysis is trusted.
 
@@ -117,7 +121,13 @@ def build_aggregates(
             "pct_of_category": round(float(top_count) / total, 4) if total else 0.0,
         }
 
-    is_rejected = df["resolution"].fillna("").str.strip().str.lower().isin(rejected_lower)
+    # Processes differ on where a rejection is recorded: some set a resolution
+    # ("Duplicate"), others carry it in the workflow state ("Rejected") and
+    # leave resolution blank entirely. Checking only one of the two silently
+    # reports every defect as valid on a project that uses the other.
+    is_rejected = _matches_rejected(df, "resolution", rejected_lower)
+    if "state" in df.columns:
+        is_rejected |= _matches_rejected(df, "state", rejected_lower)
     valid_vs_rejected = {
         "valid": int((~is_rejected).sum()),
         "rejected": int(is_rejected.sum()),
