@@ -13,7 +13,9 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import queue
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,7 +23,8 @@ from pathlib import Path
 import jsonschema
 
 from ..config import Config
-from ..llm import LlmProvider, LlmProviderError, get_llm_provider
+from ..llm import LlmProvider, LlmProviderError, get_llm_providers
+from ..llm.base import TokenUsage
 from ..models import Defect, DefectCategorization
 from ..storage import DefectStore
 
@@ -84,7 +87,11 @@ def run_categorize(
     same result at full token price. `force` disables that check.
     """
     store = DefectStore(config.db_path)
-    provider = provider or get_llm_provider(config.llm)
+    # One provider per credential: rate limits are per key, so several keys
+    # give several independent budgets to spend at once. An explicitly passed
+    # provider (tests, or a caller with its own) wins.
+    providers = [provider] if provider is not None else get_llm_providers(config.llm)
+    provider = providers[0]
 
     if sources is not None:
         # Scoped to chosen uploads. `recategorize_all` then means "include the
@@ -105,41 +112,79 @@ def run_categorize(
         return 0
 
     batches = _build_batches(pending, config.llm.categorize_batch_size, config.llm.batch_strategy)
+    logger.info(
+        "Categorizing %d defect(s) in %d batch(es) across %d API key(s).",
+        len(pending),
+        len(batches),
+        len(providers),
+    )
+
+    # Each provider is handed to one worker at a time. A provider owns a
+    # requests.Session and a usage counter, so sharing one across concurrent
+    # calls would corrupt the accounting even where the session copes.
+    # Never more workers than credentials, and never more than configured.
+    workers = max(1, min(config.llm.max_concurrency, len(providers)))
+    available: queue.Queue[LlmProvider] = queue.Queue()
+    for candidate in providers[:workers]:
+        available.put(candidate)
+
+    def _run_batch(batch: list[Defect]) -> list[DefectCategorization]:
+        worker = available.get()
+        try:
+            return _categorize_batch(worker, batch, config)
+        finally:
+            available.put(worker)
+
     total = 0
     failed_batches = 0
     done = 0
-    for index, batch in enumerate(batches, start=1):
-        # One bad batch (a dropped defect id, a malformed response, an
-        # exhausted retry) shouldn't throw away every batch still queued
-        # behind it — log it and keep going.
-        try:
-            categorizations = _categorize_batch(provider, batch, config)
-        except LlmProviderError:
-            failed_batches += 1
-            logger.exception(
-                "Batch %d of %d failed; continuing with the next batch.", index, len(batches)
-            )
-        else:
-            store.save_categorizations(categorizations)
-            total += len(categorizations)
-            logger.info("Categorized %d of %d defect(s).", done + len(batch), len(pending))
-        # Counted whether or not the batch succeeded, so progress reflects
-        # work attempted rather than stalling on a failure.
-        done += len(batch)
-        if on_progress is not None:
-            on_progress(
-                CategorizeProgress(
-                    batch_index=index,
-                    batch_count=len(batches),
-                    defects_done=done,
-                    defects_total=len(pending),
-                    failed_batches=failed_batches,
+    completed = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_run_batch, batch): batch for batch in batches}
+        # Results are consumed on this thread only, so every SQLite write
+        # stays single-threaded no matter how many workers are running.
+        for future in as_completed(futures):
+            batch = futures[future]
+            completed += 1
+            # One bad batch (a dropped defect id, a malformed response, an
+            # exhausted retry) shouldn't throw away the rest — log and continue.
+            try:
+                categorizations = future.result()
+            except LlmProviderError:
+                failed_batches += 1
+                logger.exception(
+                    "Batch %d of %d failed; continuing with the others.",
+                    completed,
+                    len(batches),
                 )
-            )
+            else:
+                store.save_categorizations(categorizations)
+                total += len(categorizations)
+                logger.info("Categorized %d of %d defect(s).", done + len(batch), len(pending))
+            # Counted whether or not the batch succeeded, so progress reflects
+            # work attempted rather than stalling on a failure.
+            done += len(batch)
+            if on_progress is not None:
+                on_progress(
+                    CategorizeProgress(
+                        batch_index=completed,
+                        batch_count=len(batches),
+                        defects_done=done,
+                        defects_total=len(pending),
+                        failed_batches=failed_batches,
+                    )
+                )
 
+    # Usage lives per provider, so a multi-key run has to be summed to report
+    # what the run as a whole cost.
+    run_usage = TokenUsage()
+    for used in providers:
+        run_usage.calls += used.usage.calls
+        run_usage.prompt_tokens += used.usage.prompt_tokens
+        run_usage.completion_tokens += used.usage.completion_tokens
     logger.info(
         "Categorize run used %s.",
-        provider.usage.summary(config.llm.cost_per_mtok_input, config.llm.cost_per_mtok_output),
+        run_usage.summary(config.llm.cost_per_mtok_input, config.llm.cost_per_mtok_output),
     )
 
     if failed_batches:

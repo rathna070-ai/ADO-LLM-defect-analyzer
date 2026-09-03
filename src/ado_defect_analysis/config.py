@@ -53,6 +53,16 @@ def _env_list(name: str, default: list[str]) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def _groq_api_keys() -> list[str]:
+    """Every Groq key available, primary first, de-duplicated.
+
+    Accepts a comma-separated `GROQ_API_KEY` as well as a separate
+    `GROQ_API_KEYS`, so adding a second key needs no config restructuring.
+    """
+    raw = [*_env_list("GROQ_API_KEY", []), *_env_list("GROQ_API_KEYS", [])]
+    return list(dict.fromkeys(key for key in raw if key))
+
+
 def _env_path(name: str, default: Path) -> Path:
     """Read a path setting, resolving relative values against the project root.
 
@@ -91,12 +101,18 @@ class AdoConfig:
 class LlmConfig:
     provider: str = "groq"
     groq_api_key: str = ""
+    # Groq rate-limits per key, so a second key is a second budget. Batches are
+    # dispatched across these in parallel — one worker per key.
+    groq_api_keys: list[str] = field(default_factory=list)
     groq_model: str = "openai/gpt-oss-120b"
     groq_base_url: str = "https://api.groq.com/openai/v1"
     copilot_api_key: str = ""
     copilot_model: str = "openai/gpt-4o-mini"
     copilot_base_url: str = "https://models.github.ai/inference"
-    request_timeout_seconds: int = 60
+    # Generous because a reasoning model with a long prompt can spend a while
+    # on internal reasoning before the first output token; too short and the
+    # request is retried from scratch, which is strictly worse than waiting.
+    request_timeout_seconds: int = 180
     temperature: float = 0.0
     # Sized for a reasoning model: gpt-oss-120b spends part of this budget on
     # internal reasoning tokens before emitting any JSON, and a budget that
@@ -107,7 +123,17 @@ class LlmConfig:
     # reasoning-token spend (and latency) down without hurting the judgment.
     # Blank it out for a provider or model that rejects the parameter.
     reasoning_effort: str = "low"
-    categorize_batch_size: int = 10
+    # The system prompt and schema (~2.8k tokens) are re-sent on every call,
+    # so under a tokens-per-minute cap a bigger batch amortises that overhead
+    # and is markedly faster overall: at batch 5 it costs ~670 tokens/defect,
+    # at batch 15 ~300. Bounded by max_tokens, which the whole batch's output
+    # has to fit inside.
+    categorize_batch_size: int = 15
+    # Batches run concurrently up to this many workers. Defaults to 1 because
+    # Groq enforces its rate limit per *organization*, not per key — extra
+    # keys from the same org buy no extra throughput and just trade 200s for
+    # 429s. Raise it only for credentials on genuinely separate orgs or tiers.
+    max_concurrency: int = 1
     # "fixed" chunks defects in arrival order, keeping prompt length uniform.
     # "module" groups each area path together first, so a batch shares context
     # — worth trying if cross-module batches prove less accurate in practice.
@@ -168,6 +194,7 @@ class Config:
         llm = LlmConfig(
             provider=os.environ.get("LLM_PROVIDER", "groq").lower(),
             groq_api_key=os.environ.get("GROQ_API_KEY", ""),
+            groq_api_keys=_groq_api_keys(),
             groq_model=os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b"),
             groq_base_url=os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
             copilot_api_key=os.environ.get("COPILOT_API_KEY", ""),
@@ -182,7 +209,8 @@ class Config:
             strict_schema=os.environ.get("LLM_STRICT_SCHEMA", "false").lower() == "true",
             cost_per_mtok_input=float(os.environ.get("LLM_COST_PER_MTOK_INPUT", "0")),
             cost_per_mtok_output=float(os.environ.get("LLM_COST_PER_MTOK_OUTPUT", "0")),
-            categorize_batch_size=_env_int("LLM_CATEGORIZE_BATCH_SIZE", 10),
+            categorize_batch_size=_env_int("LLM_CATEGORIZE_BATCH_SIZE", 15),
+            max_concurrency=max(1, _env_int("LLM_MAX_CONCURRENCY", 1)),
             batch_strategy=os.environ.get("LLM_BATCH_STRATEGY", "fixed").lower(),
         )
         db_path = _env_path("DEFECT_DB_PATH", cls.db_path)
