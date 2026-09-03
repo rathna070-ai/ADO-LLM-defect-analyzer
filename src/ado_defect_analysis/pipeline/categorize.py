@@ -10,8 +10,10 @@ context turns out to matter for accuracy.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import Config
@@ -26,6 +28,11 @@ _SCHEMAS_DIR = Path(__file__).resolve().parent.parent / "schemas"
 
 _SYSTEM_PROMPT = (_PROMPTS_DIR / "categorize_defect.md").read_text()
 _SCHEMA = json.loads((_SCHEMAS_DIR / "categorize_defect.schema.json").read_text())
+
+# Derived from the prompt text itself rather than hand-maintained, so editing
+# the prompt automatically marks every categorization made after the edit as
+# coming from a different revision.
+_PROMPT_VERSION = hashlib.sha256(_SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:12]
 
 _VALID_CATEGORIES = set(
     _SCHEMA["properties"]["results"]["items"]["properties"]["root_cause_category"]["enum"]
@@ -50,14 +57,29 @@ def run_categorize(
 
     pending = store.get_all_defects() if recategorize_all else store.get_uncategorized_defects()
     if not pending:
-        logger.info("No defects to categorize." if recategorize_all else "No uncategorized defects found.")
+        logger.info(
+            "No defects to categorize." if recategorize_all else "No uncategorized defects found."
+        )
         return 0
 
     batch_size = config.llm.categorize_batch_size
     total = 0
+    failed_batches = 0
     for start in range(0, len(pending), batch_size):
         batch = pending[start : start + batch_size]
-        categorizations = _categorize_batch(provider, batch, config)
+        # One bad batch (a dropped defect id, a malformed response, an
+        # exhausted retry) shouldn't throw away every batch still queued
+        # behind it — log it and keep going.
+        try:
+            categorizations = _categorize_batch(provider, batch, config)
+        except LlmProviderError:
+            failed_batches += 1
+            logger.exception(
+                "Batch %d-%d failed; continuing with the next batch.",
+                start + 1,
+                start + len(batch),
+            )
+            continue
         store.save_categorizations(categorizations)
         total += len(categorizations)
         logger.info(
@@ -66,6 +88,15 @@ def run_categorize(
             start + len(batch),
             len(pending),
         )
+
+    if failed_batches:
+        logger.warning("%d batch(es) failed and were skipped.", failed_batches)
+        # Nothing got through at all — surface that as a failure rather than
+        # letting the CLI print a cheerful "Categorized 0 defects."
+        if total == 0:
+            raise LlmProviderError(
+                f"All {failed_batches} categorization batch(es) failed; see the log for details."
+            )
     return total
 
 
@@ -103,6 +134,7 @@ def _categorize_batch(
     )
 
     known_ids = {d.id for d in batch}
+    categorized_at = datetime.now(timezone.utc).isoformat()
     categorizations: list[DefectCategorization] = []
     for entry in result.get("results", []):
         defect_id = entry.get("defect_id")
@@ -131,8 +163,11 @@ def _categorize_batch(
                 root_cause_category=category,
                 testing_gap_flag=bool(entry.get("testing_gap_flag", False)),
                 summary=entry.get("summary", ""),
-                confidence=float(entry.get("confidence", 0.0)),
+                confidence=_parse_confidence(entry.get("confidence"), defect_id),
                 sdlc_phase=sdlc_phase,
+                model=provider.model_name,
+                prompt_version=_PROMPT_VERSION,
+                categorized_at=categorized_at,
             )
         )
 
@@ -142,3 +177,24 @@ def _categorize_batch(
             f"LLM did not return categorizations for defect ids: {sorted(missing)}"
         )
     return categorizations
+
+
+def _parse_confidence(raw: object, defect_id: int) -> float:
+    """Coerce the model's confidence to a usable 0.0-1.0 float.
+
+    A bare `float()` here would crash the whole batch on a string like "high",
+    and would happily store a nonsense 5.0 that then skews the needs-review
+    threshold.
+    """
+    try:
+        value = float(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        logger.warning(
+            "LLM returned non-numeric confidence %r for defect %s; using 0.0.", raw, defect_id
+        )
+        return 0.0
+    if not 0.0 <= value <= 1.0:
+        logger.warning(
+            "LLM returned out-of-range confidence %r for defect %s; clamping.", value, defect_id
+        )
+    return min(max(value, 0.0), 1.0)

@@ -1,11 +1,11 @@
 """Azure DevOps REST client: WIQL query for closed defects, then a batch
 work-item fetch for the fields we need.
 
-Kept deliberately thin — no retry/backoff framework, no pagination beyond
-what WIQL already returns in one shot (ADO caps WIQL results at 20,000 work
-item ids, which is far beyond what a single fetch run needs). If this ever
-needs to run against a project large enough to hit that cap, split the query
-by date range rather than adding pagination here.
+Kept deliberately thin — no pagination beyond what WIQL already returns in one
+shot (ADO caps WIQL results at 20,000 work item ids, which is far beyond what a
+single fetch run needs). If this ever needs to run against a project large
+enough to hit that cap, split the query by date range rather than adding
+pagination here. Retry/backoff comes from the shared session in `http.py`.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from typing import Any
 import requests
 
 from .config import AdoConfig
+from .http import build_retrying_session
 from .models import Defect
 
 _DEFAULT_FIELDS = [
@@ -44,8 +45,8 @@ class AdoClient:
                 "ADO_ORGANIZATION, ADO_PROJECT, and ADO_PAT must all be set to query Azure DevOps."
             )
         self._config = config
-        self._session = requests.Session()
-        self._session.auth = ("", config.pat)
+        self._session = build_retrying_session(auth=("", config.pat))
+        self._timeout = config.request_timeout_seconds
 
     def fetch_closed_defects(self) -> list[Defect]:
         ids = self._query_work_item_ids()
@@ -57,7 +58,9 @@ class AdoClient:
             Defect.from_work_item(
                 item,
                 root_cause_field,
-                comments=self._fetch_comment_text(item["id"]) if self._config.fetch_comments else "",
+                comments=(
+                    self._fetch_comment_text(item["id"]) if self._config.fetch_comments else ""
+                ),
             )
             for item in items
         ]
@@ -74,7 +77,7 @@ class AdoClient:
             f"{self._config.base_url}/wit/workItems/{work_item_id}/comments"
             f"?api-version={self._config.api_version}-preview.4"
         )
-        response = self._session.get(url)
+        response = self._session.get(url, timeout=self._timeout)
         if response.status_code >= 400:
             return ""
         comments = response.json().get("comments", [])
@@ -83,18 +86,20 @@ class AdoClient:
     def _query_work_item_ids(self) -> list[int]:
         wiql = self._build_wiql()
         url = f"{self._config.base_url}/wit/wiql?api-version={self._config.api_version}"
-        response = self._session.post(url, json={"query": wiql})
+        response = self._session.post(url, json={"query": wiql}, timeout=self._timeout)
         self._raise_for_status(response, "WIQL query")
         work_items = response.json().get("workItems", [])
         return [item["id"] for item in work_items]
 
     def _fetch_work_items(self, ids: list[int]) -> list[dict[str, Any]]:
         url = f"{self._config.base_url}/wit/workitemsbatch?api-version={self._config.api_version}"
-        fields = list(_DEFAULT_FIELDS) + [self._config.root_cause_field]
+        fields = [*_DEFAULT_FIELDS, self._config.root_cause_field]
         items: list[dict[str, Any]] = []
         for chunk_start in range(0, len(ids), self._config.batch_size):
             chunk = ids[chunk_start : chunk_start + self._config.batch_size]
-            response = self._session.post(url, json={"ids": chunk, "fields": fields})
+            response = self._session.post(
+                url, json={"ids": chunk, "fields": fields}, timeout=self._timeout
+            )
             self._raise_for_status(response, "work item batch fetch")
             items.extend(response.json().get("value", []))
         return items

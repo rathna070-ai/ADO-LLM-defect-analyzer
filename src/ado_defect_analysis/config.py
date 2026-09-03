@@ -35,6 +35,21 @@ def _env_list(name: str, default: list[str]) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def _env_path(name: str, default: Path) -> Path:
+    """Read a path setting, resolving relative values against the project root.
+
+    Without this, the relative paths shipped in `.env.example`
+    (`DEFECT_DB_PATH=data/defects.db`) would resolve against the current
+    working directory, so running the CLI from a different folder would
+    silently read and write a different database.
+    """
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    path = Path(raw)
+    return path if path.is_absolute() else PROJECT_ROOT / path
+
+
 @dataclass
 class AdoConfig:
     organization: str = ""
@@ -47,6 +62,7 @@ class AdoConfig:
     root_cause_field: str = "Microsoft.VSTS.CMMI.RootCause"
     batch_size: int = 200
     fetch_comments: bool = False
+    request_timeout_seconds: int = 30
 
     @property
     def base_url(self) -> str:
@@ -73,10 +89,15 @@ class Config:
     llm: LlmConfig = field(default_factory=LlmConfig)
     db_path: Path = PROJECT_ROOT / "data" / "defects.db"
     output_dir: Path = PROJECT_ROOT / "data" / "exports"
-    rejected_resolutions: list[str] = field(default_factory=lambda: list(DEFAULT_REJECTED_RESOLUTIONS))
+    rejected_resolutions: list[str] = field(
+        default_factory=lambda: list(DEFAULT_REJECTED_RESOLUTIONS)
+    )
+    # Categorizations below this confidence are routed to the needs-review
+    # export rather than being taken at face value.
+    review_confidence_threshold: float = 0.6
 
     @classmethod
-    def from_env(cls) -> "Config":
+    def from_env(cls) -> Config:
         """Build a Config from process environment variables (loads .env if present)."""
         try:
             from dotenv import load_dotenv
@@ -98,6 +119,7 @@ class Config:
             ),
             batch_size=_env_int("ADO_BATCH_SIZE", 200),
             fetch_comments=os.environ.get("ADO_FETCH_COMMENTS", "false").lower() == "true",
+            request_timeout_seconds=_env_int("ADO_REQUEST_TIMEOUT_SECONDS", 30),
         )
         llm = LlmConfig(
             provider=os.environ.get("LLM_PROVIDER", "groq").lower(),
@@ -111,8 +133,8 @@ class Config:
             max_tokens=_env_int("LLM_MAX_TOKENS", 2048),
             categorize_batch_size=_env_int("LLM_CATEGORIZE_BATCH_SIZE", 10),
         )
-        db_path = Path(os.environ.get("DEFECT_DB_PATH", str(cls.db_path)))
-        output_dir = Path(os.environ.get("DEFECT_OUTPUT_DIR", str(cls.output_dir)))
+        db_path = _env_path("DEFECT_DB_PATH", cls.db_path)
+        output_dir = _env_path("DEFECT_OUTPUT_DIR", cls.output_dir)
         rejected_resolutions = _env_list("REJECTED_RESOLUTIONS", list(DEFAULT_REJECTED_RESOLUTIONS))
         return cls(
             ado=ado,
@@ -120,4 +142,5 @@ class Config:
             db_path=db_path,
             output_dir=output_dir,
             rejected_resolutions=rejected_resolutions,
+            review_confidence_threshold=float(os.environ.get("REVIEW_CONFIDENCE_THRESHOLD", "0.6")),
         )

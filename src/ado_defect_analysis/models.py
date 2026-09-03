@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import html
 import re
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -20,7 +21,7 @@ class Defect:
     resolution_notes: str
     root_cause_raw: str
     created_date: str
-    closed_date: Optional[str]
+    closed_date: str | None
     tags: str = ""
     comments: str = ""
     iteration_path: str = ""
@@ -29,7 +30,7 @@ class Defect:
     @classmethod
     def from_work_item(
         cls, item: dict[str, Any], root_cause_field: str, comments: str = ""
-    ) -> "Defect":
+    ) -> Defect:
         fields = item.get("fields", {})
         return cls(
             id=item["id"],
@@ -51,7 +52,10 @@ class Defect:
 
 @dataclass
 class DefectCategorization:
-    """Structured LLM judgment for a single defect. Mirrors schemas/categorize_defect.schema.json."""
+    """Structured LLM judgment for one defect.
+
+    Mirrors schemas/categorize_defect.schema.json.
+    """
 
     defect_id: int
     root_cause_category: str
@@ -59,9 +63,23 @@ class DefectCategorization:
     summary: str
     confidence: float
     sdlc_phase: str = "unknown"
+    # Provenance: which model and prompt revision produced this judgment, and
+    # when. Without these, a stored categorization can't be audited or
+    # selectively re-run after a prompt or model change.
+    model: str = ""
+    prompt_version: str = ""
+    categorized_at: str = ""
 
 
 def strip_html(value: str) -> str:
-    """ADO rich-text fields come back as HTML; keep the categorization prompt free of markup noise."""
+    """ADO rich-text fields come back as HTML; keep the categorization prompt free of markup noise.
+
+    Entities are unescaped after tag removal so `&nbsp;` and `&amp;` reach the
+    LLM as real characters instead of literal markup noise.
+    """
     text = re.sub(r"<[^>]+>", " ", value or "")
+    text = html.unescape(text)
+    # unescape turns &nbsp; into U+00A0, which \s only matches under re.UNICODE
+    # on str (it does) — but normalize it explicitly so the collapse is total.
+    text = text.replace("\xa0", " ")
     return re.sub(r"\s+", " ", text).strip()

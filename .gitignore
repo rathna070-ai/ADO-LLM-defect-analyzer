@@ -3,8 +3,17 @@ __pycache__/
 *.pyc
 .venv/
 venv/
-.pytest_cache/
 *.egg-info/
+build/
+dist/
+
+# Tool caches and coverage output
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # Secrets — never commit real API keys or PATs
 .env

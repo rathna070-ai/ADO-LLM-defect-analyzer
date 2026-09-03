@@ -103,6 +103,41 @@ def test_fetch_closed_defects_pulls_comments_when_enabled():
 
 
 @responses.activate
+def test_every_request_carries_a_timeout():
+    """An unbounded ADO call can hang a scheduled run forever."""
+    responses.add(responses.POST, f"{_BASE}/wit/wiql", json={"workItems": [{"id": 1}]}, status=200)
+    responses.add(
+        responses.POST,
+        f"{_BASE}/wit/workitemsbatch",
+        json={"value": [{"id": 1, "fields": {"System.Title": "Bug"}}]},
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        f"{_BASE}/wit/workItems/1/comments",
+        json={"comments": []},
+        status=200,
+    )
+
+    AdoClient(_config(fetch_comments=True, request_timeout_seconds=17)).fetch_closed_defects()
+
+    assert responses.calls
+    for call in responses.calls:
+        assert call.request.req_kwargs["timeout"] == 17
+
+
+@responses.activate
+def test_retries_transient_failure_then_succeeds():
+    """A single 429/503 shouldn't lose the run — the session retries it."""
+    responses.add(responses.POST, f"{_BASE}/wit/wiql", json={}, status=503)
+    responses.add(responses.POST, f"{_BASE}/wit/wiql", json={"workItems": []}, status=200)
+
+    # No exception, and it consumed both queued responses.
+    assert AdoClient(_config()).fetch_closed_defects() == []
+    assert len(responses.calls) == 2
+
+
+@responses.activate
 def test_fetch_closed_defects_returns_empty_when_no_work_items():
     responses.add(
         responses.POST,

@@ -9,9 +9,9 @@ categorized without re-parsing every export.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
 
 from .models import Defect, DefectCategorization
 
@@ -39,7 +39,10 @@ CREATE TABLE IF NOT EXISTS categorizations (
     testing_gap_flag INTEGER NOT NULL,
     summary TEXT NOT NULL,
     confidence REAL NOT NULL,
-    sdlc_phase TEXT
+    sdlc_phase TEXT,
+    model TEXT,
+    prompt_version TEXT,
+    categorized_at TEXT
 );
 """
 
@@ -52,6 +55,9 @@ _MIGRATIONS = {
     ],
     "categorizations": [
         ("sdlc_phase", "TEXT"),
+        ("model", "TEXT"),
+        ("prompt_version", "TEXT"),
+        ("categorized_at", "TEXT"),
     ],
 }
 
@@ -76,9 +82,15 @@ class DefectStore:
     def _connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = sqlite3.Row
+        # Off by default in SQLite, so the categorizations -> defects reference
+        # isn't actually enforced without this.
+        conn.execute("PRAGMA foreign_keys = ON")
         try:
             yield conn
             conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 
@@ -149,14 +161,18 @@ class DefectStore:
             conn.executemany(
                 """
                 INSERT INTO categorizations
-                    (defect_id, root_cause_category, testing_gap_flag, summary, confidence, sdlc_phase)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (defect_id, root_cause_category, testing_gap_flag, summary, confidence,
+                     sdlc_phase, model, prompt_version, categorized_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(defect_id) DO UPDATE SET
                     root_cause_category=excluded.root_cause_category,
                     testing_gap_flag=excluded.testing_gap_flag,
                     summary=excluded.summary,
                     confidence=excluded.confidence,
-                    sdlc_phase=excluded.sdlc_phase
+                    sdlc_phase=excluded.sdlc_phase,
+                    model=excluded.model,
+                    prompt_version=excluded.prompt_version,
+                    categorized_at=excluded.categorized_at
                 """,
                 [
                     (
@@ -166,18 +182,24 @@ class DefectStore:
                         c.summary,
                         c.confidence,
                         c.sdlc_phase,
+                        c.model,
+                        c.prompt_version,
+                        c.categorized_at,
                     )
                     for c in categorizations
                 ],
             )
 
     def get_categorized_defects(self) -> list[dict]:
-        """Defects joined with their categorization — the shape the export and aggregate stages need."""
+        """Defects joined with their categorization.
+
+        The shape the export and aggregate stages need.
+        """
         with self._connect() as conn:
             rows = conn.execute(
                 """
                 SELECT d.*, c.root_cause_category, c.testing_gap_flag, c.summary, c.confidence,
-                       c.sdlc_phase
+                       c.sdlc_phase, c.model, c.prompt_version, c.categorized_at
                 FROM defects d
                 JOIN categorizations c ON c.defect_id = d.id
                 """

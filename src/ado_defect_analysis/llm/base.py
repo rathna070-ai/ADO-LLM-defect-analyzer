@@ -17,6 +17,16 @@ class LlmProviderError(RuntimeError):
 
 
 class LlmProvider(ABC):
+    @property
+    @abstractmethod
+    def model_name(self) -> str:
+        """Identifier of the model behind this provider, recorded as provenance.
+
+        Stored on every categorization so results stay traceable to the model
+        that produced them across model upgrades.
+        """
+        raise NotImplementedError
+
     @abstractmethod
     def complete_json(
         self,

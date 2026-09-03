@@ -22,7 +22,9 @@ _SCHEMA = json.loads((_SCHEMAS_DIR / "narrative_summary.schema.json").read_text(
 def run_report(config: Config, provider: LlmProvider | None = None) -> dict:
     """Returns the narrative dict (also matches narrative_summary.schema.json)."""
     df = load_categorized_dataframe(config)
-    aggregates = build_aggregates(df)
+    aggregates = build_aggregates(
+        df, config.rejected_resolutions, config.review_confidence_threshold
+    )
 
     if aggregates["total_defects"] == 0:
         logger.warning("No categorized defects to report on. Run fetch and categorize first.")

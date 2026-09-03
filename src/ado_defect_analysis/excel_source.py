@@ -15,12 +15,14 @@ an export that names things unusually.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 
 from .models import Defect, strip_html
+
+logger = logging.getLogger(__name__)
 
 # Each target Defect field maps to the column headers ADO is known to export
 # it under. First match wins; matching is case-insensitive and ignores
@@ -55,7 +57,7 @@ class ExcelSourceError(RuntimeError):
     pass
 
 
-def parse_excel(file_path: Path, column_map: Optional[dict[str, list[str]]] = None) -> list[Defect]:
+def parse_excel(file_path: Path, column_map: dict[str, list[str]] | None = None) -> list[Defect]:
     """Read an ADO Excel/CSV export and return it as `Defect` objects.
 
     `column_map` overrides `_COLUMN_SYNONYMS` per field, e.g.
@@ -82,9 +84,16 @@ def parse_excel(file_path: Path, column_map: Optional[dict[str, list[str]]] = No
         raw_id = _cell(row, resolved, "id")
         if not raw_id:
             continue
+        try:
+            defect_id = int(float(raw_id))
+        except ValueError:
+            # Exports often carry a trailing summary/footer row ("Total", a
+            # note) in the ID column; skip it rather than failing the import.
+            logger.warning("Skipping row with non-numeric ID %r in %s.", raw_id, file_path.name)
+            continue
         defects.append(
             Defect(
-                id=int(float(raw_id)),
+                id=defect_id,
                 title=_cell(row, resolved, "title"),
                 description=strip_html(_cell(row, resolved, "description")),
                 module=_cell(row, resolved, "module"),

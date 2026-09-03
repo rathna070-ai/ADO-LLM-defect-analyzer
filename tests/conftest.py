@@ -1,4 +1,5 @@
-import sys
-from pathlib import Path
+"""Pytest configuration.
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+The package is imported from an editable install (`pip install -e ".[dev]"`),
+so no sys.path manipulation is needed here.
+"""

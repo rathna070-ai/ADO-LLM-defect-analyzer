@@ -13,8 +13,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import requests
-
+from ..http import build_retrying_session
 from .base import LlmProvider, LlmProviderError
 
 
@@ -28,6 +27,13 @@ class GroqProvider(LlmProvider):
         self._model = model
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
+        # Retries honour Groq's Retry-After on 429, which doubles as the
+        # rate-limit pacing a long categorize run needs.
+        self._session = build_retrying_session()
+
+    @property
+    def model_name(self) -> str:
+        return self._model
 
     def complete_json(
         self,
@@ -42,7 +48,7 @@ class GroqProvider(LlmProvider):
             "Respond with a single JSON object only, no prose, matching this shape:\n"
             f"{json.dumps(schema, indent=2)}"
         )
-        payload = {
+        payload: dict[str, Any] = {
             "model": self._model,
             "messages": [
                 {"role": "system", "content": f"{system_prompt}\n\n{schema_instruction}"},
@@ -52,7 +58,7 @@ class GroqProvider(LlmProvider):
             "max_tokens": max_tokens,
             "response_format": {"type": "json_object"},
         }
-        response = requests.post(
+        response = self._session.post(
             f"{self._base_url}/chat/completions",
             headers={
                 "Authorization": f"Bearer {self._api_key}",

@@ -18,7 +18,9 @@ from .pipeline.report import run_report
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ado-defect-analysis",
-        description="Pull closed ADO defects, categorize root causes with an LLM, and export for Power BI.",
+        description=(
+            "Pull closed ADO defects, categorize root causes with an LLM, and export for Power BI."
+        ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 

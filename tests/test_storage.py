@@ -106,9 +106,7 @@ def test_upgrades_db_created_with_old_schema(tmp_path: Path):
     """
     conn = sqlite3.connect(db_path)
     conn.executescript(old_schema)
-    conn.execute(
-        "INSERT INTO defects (id, title) VALUES (1, 'Legacy bug')"
-    )
+    conn.execute("INSERT INTO defects (id, title) VALUES (1, 'Legacy bug')")
     conn.commit()
     conn.close()
 
@@ -118,6 +116,27 @@ def test_upgrades_db_created_with_old_schema(tmp_path: Path):
     all_defects = store.get_all_defects()
     assert all_defects[0].iteration_path == "App\\Sprint 12"
     assert all_defects[0].resolution == "Fixed"
+
+    # The provenance columns are part of the same in-place upgrade.
+    store.save_categorizations(
+        [
+            DefectCategorization(
+                defect_id=1,
+                root_cause_category="code_defect",
+                testing_gap_flag=False,
+                summary="s",
+                confidence=0.8,
+                sdlc_phase="development",
+                model="llama-3.3-70b-versatile",
+                prompt_version="abc123def456",
+                categorized_at="2026-09-03T10:00:00+00:00",
+            )
+        ]
+    )
+    row = store.get_categorized_defects()[0]
+    assert row["model"] == "llama-3.3-70b-versatile"
+    assert row["prompt_version"] == "abc123def456"
+    assert row["categorized_at"] == "2026-09-03T10:00:00+00:00"
 
 
 def test_upsert_is_idempotent(tmp_path: Path):

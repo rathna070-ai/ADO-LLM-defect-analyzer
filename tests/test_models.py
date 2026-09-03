@@ -1,4 +1,6 @@
-from ado_defect_analysis.models import Defect, DefectCategorization
+import pytest
+
+from ado_defect_analysis.models import Defect, DefectCategorization, strip_html
 
 
 def test_from_work_item_strips_html_and_maps_fields():
@@ -56,6 +58,20 @@ def test_from_work_item_defaults_iteration_and_resolution_when_absent():
 
     assert defect.iteration_path == ""
     assert defect.resolution == ""
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("<p>Payment&nbsp;failed</p>", "Payment failed"),
+        ("Search &amp; filter broken", "Search & filter broken"),
+        ("<div>a &lt;b&gt; c</div>", "a <b> c"),
+        ("", ""),
+    ],
+)
+def test_strip_html_unescapes_entities(raw: str, expected: str):
+    """Entities left as-is would reach the LLM prompt as literal markup noise."""
+    assert strip_html(raw) == expected
 
 
 def test_defect_categorization_defaults_sdlc_phase_to_unknown():

@@ -1,0 +1,88 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ado-defect-analysis"
+version = "0.2.0"
+description = "Pull closed Azure DevOps defects, classify root cause with an LLM, and export the analysis for Power BI or a Streamlit dashboard."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "rathna070-ai" }]
+keywords = ["azure-devops", "defect-analysis", "root-cause-analysis", "llm", "qa"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "requests>=2.31",
+    "pandas>=2.2",
+    "python-dotenv>=1.0",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+# The dashboard is a runtime feature, not a dev tool — it lived in
+# requirements-dev.txt only because there was nowhere better to put it.
+dashboard = ["streamlit>=1.38"]
+dev = [
+    "pytest>=8.0",
+    "responses>=0.25",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "pre-commit>=3.7",
+]
+
+[project.scripts]
+ado-defect-analysis = "ado_defect_analysis.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/rathna070-ai/ADO-LLM-defect-analyzer"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# categorize.py and report.py read these out of the package directory at import
+# time, so they have to ship inside the wheel, not just sit in the source tree.
+[tool.setuptools.package-data]
+ado_defect_analysis = ["prompts/*.md", "schemas/*.json", "py.typed"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests", "dashboard"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# The dashboard's section headings use a real "×" for cross-tabs; the
+# homoglyph rule is aimed at identifiers, not display copy.
+"dashboard/streamlit_app.py" = ["RUF001"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers --strict-config"
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["ado_defect_analysis"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = ["pragma: no cover", "raise NotImplementedError", "if __name__ == .__main__.:"]

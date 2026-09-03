@@ -1,4 +1,3 @@
--r requirements.txt
-pytest>=8.0
-responses>=0.25
-streamlit>=1.38
+# Dev + dashboard extras are declared in pyproject.toml; this stays as a
+# convenience pointer so `pip install -r requirements-dev.txt` keeps working.
+-e .[dev,dashboard]

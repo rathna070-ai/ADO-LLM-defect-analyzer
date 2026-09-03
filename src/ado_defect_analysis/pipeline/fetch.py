@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 from ..ado_client import AdoClient
 from ..config import Config
@@ -36,7 +35,7 @@ def run_fetch(config: Config) -> int:
 
 
 def run_fetch_from_excel(
-    config: Config, file_path: Path, column_map: Optional[dict[str, list[str]]] = None
+    config: Config, file_path: Path, column_map: dict[str, list[str]] | None = None
 ) -> int:
     """Load defects from an ADO Excel/CSV export. Returns the count stored.
 

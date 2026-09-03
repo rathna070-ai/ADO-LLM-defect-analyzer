@@ -38,7 +38,13 @@ upserting by id so re-running fetch — from either source — is safe.
 
 - `pipeline/categorize.py` batches uncategorized defects (fixed batch size,
   `LLM_CATEGORIZE_BATCH_SIZE`) and asks the configured provider for structured JSON:
-  root cause category, a testing-gap flag, a one-line summary, and a confidence score.
+  root cause category, SDLC phase, a testing-gap flag, a one-line summary, and a
+  confidence score. The prompt is given `state`, `disposition`, `root_cause_raw`,
+  `resolution_notes`, `tags`, and `comments` and told to cross-reference them
+  rather than judging on title/description alone.
+- `--recategorize-all` re-runs every defect in the DB, for backfilling after a
+  prompt or model change; each row records the model, prompt fingerprint, and
+  timestamp that produced it.
 - Prompt lives in `prompts/categorize_defect.md`; the expected shape is
   `schemas/categorize_defect.schema.json`. The prompt is sent as plain instructions —
   Groq's JSON mode guarantees valid JSON, not schema conformance — so the pipeline
@@ -68,24 +74,51 @@ upserting by id so re-running fetch — from either source — is safe.
 
 ## Phase 5 — Standalone dashboard (optional, done as a demo path)
 
-- `dashboard/streamlit_app.py` reads the same SQLite DB and renders the same
-  aggregates as a Streamlit app, for a demo that doesn't require Power BI installed.
+- `dashboard/streamlit_app.py` reads the same SQLite DB and renders the aggregates as
+  a Streamlit app, for a demo that doesn't require Power BI installed.
   Run with `streamlit run dashboard/streamlit_app.py`.
+- Sections: root-cause distribution, defects by area path, area path × iteration path,
+  RCA major contributor, valid vs rejected, RCA vs SDLC phase, monthly trend, and the
+  needs-review triage list.
+- Supporting this needed `iteration_path` and a structured `resolution` field carried
+  end to end (ADO API + Excel import + SQLite), plus an LLM-classified `sdlc_phase`
+  alongside `root_cause_category`.
 
-## Phase 6 — Hardening (not started)
+## Phase 6 — Hardening (done)
 
-Candidates, roughly in the order they'd matter for a real quarterly run rather than
-a portfolio demo:
+- **Retry/backoff** — `http.py` builds one retrying `requests.Session` (429 + 5xx,
+  exponential backoff, honours `Retry-After`) shared by the ADO client and the Groq
+  provider. This also covers the rate-limit pacing the categorize phase needed.
+- **Timeouts** — every ADO call now passes one (`ADO_REQUEST_TIMEOUT_SECONDS`);
+  previously they could hang indefinitely.
+- **Batch failure isolation** — one bad batch is logged and skipped instead of
+  aborting the whole categorize run; it only raises if every batch failed.
+- **Input resilience** — HTML entities are unescaped before prompting, non-numeric
+  ID rows in an Excel export are skipped, and malformed confidence values are
+  coerced and clamped.
 
-- Retry/backoff on ADO and Groq HTTP calls (both currently fail fast on error).
-- Batch categorization by module instead of fixed-size groups, if accuracy on
-  cross-module batches turns out to be worse in practice.
+## Phase 6b — Project scaffolding (done)
+
+- `pyproject.toml` (PEP 621): packaging, `ado-defect-analysis` console script,
+  `dashboard`/`dev` extras, and config for ruff, mypy, pytest, and coverage.
+- GitHub Actions CI running lint, format check, type check, and tests on Python
+  3.10–3.12; pre-commit config; MIT license.
+- Categorization provenance (`model`, `prompt_version`, `categorized_at`) and a
+  confidence-driven `needs_review.csv` triage export.
+
+## Phase 7 — Remaining candidates (not started)
+
+- Content-hash skip on re-categorize, so `--recategorize-all` only re-spends on
+  defects whose input fields actually changed.
+- Strict `jsonschema` validation of LLM responses (today's hand-rolled enum checks
+  are deliberately lenient: invalid value → `unknown` + warning).
+- Token/cost tracking per run from the provider `usage` field.
 - A `--since`/`--until` CLI flag for report and export, so a quarter's narrative
   doesn't have to mean "everything in the DB."
-- Rate-limit-aware pacing for the categorize phase against Groq's per-minute limits
-  once the defect volume is large enough to matter.
+- Batch categorization by module instead of fixed-size groups, if accuracy on
+  cross-module batches turns out to be worse in practice.
 
-## Phase 7 — Copilot provider (future, placeholder only)
+## Phase 8 — Copilot provider (future, placeholder only)
 
 - Implement `llm/copilot_provider.py` for real once there's an API surface to target
   (GitHub Models' OpenAI-compatible endpoint is the likely fit). No pipeline code

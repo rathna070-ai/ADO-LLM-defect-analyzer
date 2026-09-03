@@ -25,7 +25,31 @@ def load_categorized_dataframe(config: Config) -> pd.DataFrame:
     return df
 
 
-def build_aggregates(df: pd.DataFrame, rejected_resolutions: list[str] | None = None) -> dict:
+def needs_review_mask(df: pd.DataFrame, review_confidence_threshold: float = 0.6) -> pd.Series:
+    """Rows a human should re-check before the analysis is trusted.
+
+    Either the model told us it wasn't sure (sub-threshold confidence), or it
+    declined to make a call at all (`unknown` on either dimension). Shared by
+    the aggregate count and the needs-review export so both agree on what
+    "needs review" means.
+    """
+    low_confidence = pd.to_numeric(df["confidence"], errors="coerce").fillna(0.0) < (
+        review_confidence_threshold
+    )
+    unknown_rca = df["root_cause_category"].fillna("unknown").eq("unknown")
+    unknown_phase = (
+        df["sdlc_phase"].fillna("unknown").eq("unknown")
+        if "sdlc_phase" in df.columns
+        else pd.Series(False, index=df.index)
+    )
+    return low_confidence | unknown_rca | unknown_phase
+
+
+def build_aggregates(
+    df: pd.DataFrame,
+    rejected_resolutions: list[str] | None = None,
+    review_confidence_threshold: float = 0.6,
+) -> dict:
     if df.empty:
         return {
             "total_defects": 0,
@@ -37,6 +61,7 @@ def build_aggregates(df: pd.DataFrame, rejected_resolutions: list[str] | None = 
             "rca_major_contributor": {},
             "valid_vs_rejected": {"valid": 0, "rejected": 0},
             "rca_sdlc_crosstab": {},
+            "needs_review_count": 0,
         }
 
     rejected_resolutions = rejected_resolutions or DEFAULT_REJECTED_RESOLUTIONS
@@ -52,14 +77,16 @@ def build_aggregates(df: pd.DataFrame, rejected_resolutions: list[str] | None = 
     testing_gap_rate = float(df["testing_gap_flag"].astype(bool).mean())
 
     area_iteration_distribution: dict[str, dict[str, int]] = {}
-    for (area_path, iteration_path), count in df.groupby(["module", "iteration_path"]).size().items():
+    area_iteration_counts = df.groupby(["module", "iteration_path"]).size()
+    for (area_path, iteration_path), count in area_iteration_counts.items():
         area_iteration_distribution.setdefault(str(area_path), {})[str(iteration_path)] = int(count)
 
     rca_major_contributor: dict[str, dict] = {}
     category_totals = df["root_cause_category"].value_counts()
     by_category_module = df.groupby(["root_cause_category", "module"]).size()
     for category in category_totals.index:
-        top_module, top_count = by_category_module[category].idxmax(), by_category_module[category].max()
+        per_module = by_category_module[category]
+        top_module, top_count = per_module.idxmax(), per_module.max()
         total = int(category_totals[category])
         rca_major_contributor[str(category)] = {
             "area_path": str(top_module),
@@ -80,7 +107,7 @@ def build_aggregates(df: pd.DataFrame, rejected_resolutions: list[str] | None = 
             rca_sdlc_crosstab[str(category)] = {str(k): int(v) for k, v in row.items()}
 
     return {
-        "total_defects": int(len(df)),
+        "total_defects": len(df),
         "root_cause_distribution": root_cause_distribution,
         "module_density": module_density,
         "monthly_trend": monthly_trend,
@@ -89,4 +116,5 @@ def build_aggregates(df: pd.DataFrame, rejected_resolutions: list[str] | None = 
         "rca_major_contributor": rca_major_contributor,
         "valid_vs_rejected": valid_vs_rejected,
         "rca_sdlc_crosstab": rca_sdlc_crosstab,
+        "needs_review_count": int(needs_review_mask(df, review_confidence_threshold).sum()),
     }

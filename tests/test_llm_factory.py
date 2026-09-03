@@ -26,7 +26,9 @@ def test_factory_rejects_unknown_provider():
 
 def test_groq_provider_requires_api_key():
     with pytest.raises(LlmProviderError):
-        GroqProvider(api_key="", model="llama-3.3-70b-versatile", base_url="https://api.groq.com/openai/v1")
+        GroqProvider(
+            api_key="", model="llama-3.3-70b-versatile", base_url="https://api.groq.com/openai/v1"
+        )
 
 
 def test_copilot_provider_is_not_implemented_yet():

@@ -1,4 +1,3 @@
-requests>=2.31
-pandas>=2.2
-python-dotenv>=1.0
-openpyxl>=3.1
+# Runtime dependencies live in pyproject.toml; this stays as a convenience
+# pointer so `pip install -r requirements.txt` keeps working.
+-e .

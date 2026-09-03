@@ -1,23 +1,23 @@
 """Optional standalone dashboard — a demo path that doesn't need Power BI installed.
 
 Reads straight from the SQLite DB the pipeline already writes to, so it's
-always showing whatever `fetch`/`categorize` last produced. Run with:
+always showing whatever `fetch`/`categorize` last produced. Needs the package
+installed (`pip install -e ".[dashboard]"`), then run with:
 
     streamlit run dashboard/streamlit_app.py
 """
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-
 import pandas as pd
 import streamlit as st
 
 from ado_defect_analysis.config import Config
-from ado_defect_analysis.pipeline.aggregate import build_aggregates, load_categorized_dataframe
+from ado_defect_analysis.pipeline.aggregate import (
+    build_aggregates,
+    load_categorized_dataframe,
+    needs_review_mask,
+)
 
 st.set_page_config(page_title="ADO Defect Analysis", layout="wide")
 st.title("ADO Defect Root-Cause Analysis")
@@ -31,12 +31,13 @@ if df.empty:
     )
     st.stop()
 
-aggregates = build_aggregates(df, config.rejected_resolutions)
+aggregates = build_aggregates(df, config.rejected_resolutions, config.review_confidence_threshold)
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("Total defects", aggregates["total_defects"])
 col2.metric("Testing-gap rate", f"{aggregates['testing_gap_rate']:.0%}")
 col3.metric("Areas affected", len(aggregates["module_density"]))
+col4.metric("Needs review", aggregates["needs_review_count"])
 
 st.subheader("Root cause distribution")
 st.bar_chart(aggregates["root_cause_distribution"])
@@ -45,7 +46,7 @@ st.subheader("Defects by area path")
 st.bar_chart(aggregates["module_density"])
 
 st.subheader("Defects by area path × iteration path")
-area_options = ["All"] + sorted(aggregates["area_iteration_distribution"].keys())
+area_options = ["All", *sorted(aggregates["area_iteration_distribution"].keys())]
 selected_area = st.selectbox("Area path", area_options)
 iteration_df = df if selected_area == "All" else df[df["module"] == selected_area]
 iteration_pivot = iteration_df.pivot_table(
@@ -85,6 +86,21 @@ st.dataframe(sdlc_df, use_container_width=True)
 
 st.subheader("Monthly trend")
 st.line_chart(aggregates["monthly_trend"])
+
+st.subheader("Needs review")
+st.caption(
+    f"Confidence below {config.review_confidence_threshold:.0%}, or an unknown "
+    "root cause / SDLC phase — audit these before trusting the rest."
+)
+review_df = df[needs_review_mask(df, config.review_confidence_threshold)].sort_values("confidence")
+if review_df.empty:
+    st.success("Nothing flagged for review.")
+else:
+    st.dataframe(
+        review_df[["id", "title", "root_cause_category", "sdlc_phase", "confidence", "summary"]],
+        use_container_width=True,
+        hide_index=True,
+    )
 
 st.subheader("Categorized defects")
 st.dataframe(df, use_container_width=True)

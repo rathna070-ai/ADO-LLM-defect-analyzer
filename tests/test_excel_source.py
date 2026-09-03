@@ -99,6 +99,22 @@ def test_parse_excel_raises_for_missing_file(tmp_path: Path):
         parse_excel(tmp_path / "does-not-exist.xlsx")
 
 
+def test_parse_excel_skips_non_numeric_id_rows(tmp_path: Path):
+    """Exports often end with a "Total"/footer row — it shouldn't kill the import."""
+    path = _write_excel(
+        tmp_path,
+        [
+            {"ID": 1, "Title": "Real defect"},
+            {"ID": "Total", "Title": "Footer row from the export"},
+            {"ID": 2, "Title": "Another real defect"},
+        ],
+    )
+
+    defects = parse_excel(path)
+
+    assert [d.id for d in defects] == [1, 2]
+
+
 def test_parse_excel_skips_blank_id_rows(tmp_path: Path):
     path = _write_excel(
         tmp_path,
