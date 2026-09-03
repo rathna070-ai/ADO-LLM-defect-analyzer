@@ -107,11 +107,17 @@ class DefectStore:
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._db_path)
+        # `timeout` makes a contended connection wait rather than raise
+        # "database is locked": a background categorize run writes while the UI
+        # polls for progress, so reads and writes genuinely overlap.
+        conn = sqlite3.connect(self._db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         # Off by default in SQLite, so the categorizations -> defects reference
         # isn't actually enforced without this.
         conn.execute("PRAGMA foreign_keys = ON")
+        # WAL lets readers proceed while a writer holds the database, which is
+        # exactly the progress-polling case. Persists on the file once set.
+        conn.execute("PRAGMA journal_mode = WAL")
         try:
             yield conn
             conn.commit()

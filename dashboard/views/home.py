@@ -8,27 +8,55 @@ they care about.
 from __future__ import annotations
 
 import tempfile
-import time
 from pathlib import Path
 
 import streamlit as st
 
 from ado_defect_analysis.ado_query import AdoQueryUrlError, parse_query_url
+from ado_defect_analysis.background import RUN
 from ado_defect_analysis.config import Config
-from ado_defect_analysis.pipeline.categorize import CategorizeProgress, run_categorize
 from ado_defect_analysis.pipeline.fetch import run_fetch_from_excel, run_fetch_from_query
 from ado_defect_analysis.storage import DefectStore
 
 _UPLOAD = "Upload file"
 _QUERY = "ADO link"
-#: Observed round-trip for one batch, used only for the up-front estimate.
-_SECONDS_PER_BATCH = 20
+
+# Token cost of one call, measured rather than guessed: the system prompt and
+# schema are re-sent every time (~2,650), each defect adds ~126 of prompt and
+# ~85 of output, and a reasoning model spends ~1,200 thinking before it emits
+# anything. Used only to estimate a run before the first batch lands; observed
+# throughput takes over immediately afterwards.
+_TOKENS_FIXED = 2650
+_TOKENS_PROMPT_PER_DEFECT = 126
+_TOKENS_OUTPUT_PER_DEFECT = 85
+_TOKENS_REASONING = 1200
+#: Groq free-tier budget, enforced per organization.
+_TOKENS_PER_MINUTE = 8000
 
 
 def _format_duration(seconds: float) -> str:
     if seconds < 90:
         return f"{max(int(seconds), 1)} seconds"
     return f"{seconds / 60:.0f} minutes"
+
+
+def _estimate_seconds(queued: int, batch_size: int) -> float:
+    """Rough run time, bounded by the token budget rather than by latency.
+
+    Throughput here is capped by tokens per minute, not by how fast the model
+    answers — so the estimate comes from how many calls the budget allows, not
+    from a per-batch stopwatch constant.
+    """
+    if queued <= 0:
+        return 0.0
+    batches = -(-queued // batch_size)
+    tokens_per_call = (
+        _TOKENS_FIXED
+        + (_TOKENS_PROMPT_PER_DEFECT + _TOKENS_OUTPUT_PER_DEFECT) * batch_size
+        + _TOKENS_REASONING
+    )
+    minutes_per_call = max(tokens_per_call / _TOKENS_PER_MINUTE, 0.0)
+    return batches * minutes_per_call * 60
 
 
 def render(config: Config) -> None:
@@ -165,8 +193,12 @@ def _render_analysis_panel(config: Config) -> None:
         queued = sum(s["total"] if rerun_analyzed else s["uncategorized"] for s in chosen)
         batch_size = config.llm.categorize_batch_size
         batches = -(-queued // batch_size) if queued else 0
+        model = config.llm.groq_model if config.llm.provider == "groq" else config.llm.copilot_model
+        running = RUN.is_active()
 
-        if not selected:
+        if running:
+            st.info("A run is already in progress — see below.")
+        elif not selected:
             st.caption("Select at least one upload.")
         elif not queued:
             st.caption(
@@ -174,53 +206,65 @@ def _render_analysis_panel(config: Config) -> None:
                 "tick *Re-run already analyzed* to process it again."
             )
         else:
+            st.markdown(
+                f"Sends **{queued}** defect(s) to **{model}** in **{batches}** batch(es) "
+                f"of {batch_size} for root-cause and SDLC-phase classification."
+            )
             st.caption(
-                f"{queued} defect(s) in {batches} batch(es). Expect roughly "
-                f"{_format_duration(batches * _SECONDS_PER_BATCH)}. Each batch is saved as "
-                "it finishes, so nothing is lost if this stops partway — but **keep this "
-                "tab open**, because closing it ends the run."
+                f"Expect roughly {_format_duration(_estimate_seconds(queued, batch_size))} — "
+                f"throughput is capped by the {_TOKENS_PER_MINUTE:,} tokens/minute budget, "
+                "not by model speed. The run continues in the background, so you can close "
+                "this tab and come back to it."
             )
 
-        if st.button("Run analyzer", type="primary", disabled=not queued):
-            _run(config, selected, rerun_analyzed)
+        if st.button("Run analyzer", type="primary", disabled=running or not queued):
+            RUN.start(config, sources=selected, recategorize_all=rerun_analyzed)
+            st.rerun()
 
-    if processed and st.button("View dashboard"):
+    _render_run_progress()
+
+    if processed and not RUN.is_active() and st.button("View dashboard"):
         st.session_state["page"] = "dashboard"
         st.rerun()
 
 
-def _run(config: Config, sources: list[str], rerun_analyzed: bool) -> None:
-    progress_bar = st.progress(0.0)
-    status = st.empty()
-    started = time.monotonic()
+@st.fragment(run_every=2)
+def _render_run_progress() -> None:
+    """Live view of the background run, refreshed on its own every 2s.
 
-    def _report(update: CategorizeProgress) -> None:
-        fraction = update.defects_done / max(update.defects_total, 1)
-        elapsed = time.monotonic() - started
-        remaining = (elapsed / fraction - elapsed) if fraction else 0.0
-        note = f" · {update.failed_batches} batch(es) failed" if update.failed_batches else ""
-        progress_bar.progress(min(fraction, 1.0))
-        status.markdown(
-            f"Batch **{update.batch_index}/{update.batch_count}** · "
-            f"**{update.defects_done}/{update.defects_total}** defects · "
-            f"about {_format_duration(remaining)} left{note}"
-        )
-
-    try:
-        count = run_categorize(
-            config,
-            recategorize_all=rerun_analyzed,
-            on_progress=_report,
-            sources=sources,
-        )
-    except Exception as exc:
-        progress_bar.empty()
-        status.empty()
-        st.error(f"Analysis failed: {exc}")
+    A fragment reruns only itself, so this ticks without re-executing the page
+    or blocking anything. Rendered outside the bordered panel so the bar gets
+    full width.
+    """
+    status = RUN.status()
+    if not status.has_run:
         return
 
-    progress_bar.empty()
-    status.empty()
-    st.success(f"Analyzed {count} defect(s).")
-    st.session_state["page"] = "dashboard"
-    st.rerun()
+    if status.error:
+        st.error(f"Analysis failed: {status.error}")
+        return
+
+    if not status.active:
+        analyzed = status.result_count if status.result_count is not None else status.defects_done
+        message = f"Analyzed {analyzed} defect(s) in {_format_duration(status.elapsed_seconds)}."
+        if status.failed_batches:
+            message += f" {status.failed_batches} batch(es) failed — see the log."
+        st.success(message)
+        return
+
+    st.progress(status.fraction)
+    eta = status.eta_seconds()
+    # A batch is a single LLM call, so there is no true sub-batch progress to
+    # report. The elapsed timer is what shows it is alive in the meantime.
+    if status.batch_count:
+        line = (
+            f"Batch **{status.batch_index + 1}/{status.batch_count}** in progress · "
+            f"**{status.defects_done}/{status.defects_total}** defects done · "
+            f"running for {_format_duration(status.elapsed_seconds)}"
+        )
+        line += f" · about {_format_duration(eta)} left" if eta else ""
+    else:
+        line = f"Starting first batch · running for {_format_duration(status.elapsed_seconds)}"
+    if status.failed_batches:
+        line += f" · {status.failed_batches} batch(es) failed"
+    st.markdown(line)
