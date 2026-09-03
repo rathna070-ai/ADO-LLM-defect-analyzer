@@ -14,12 +14,18 @@
           "root_cause_category": {
             "type": "string",
             "enum": [
-              "code_defect",
-              "requirement_gap",
-              "testing_gap",
-              "environment_config",
-              "data_issue",
-              "third_party_dependency",
+              "requirements_gap",
+              "design_flaw",
+              "coding_error",
+              "data_defect",
+              "integration_defect",
+              "configuration_defect",
+              "build_deployment_defect",
+              "test_gap",
+              "third_party_defect",
+              "performance_defect",
+              "security_defect",
+              "not_a_defect",
               "unknown"
             ]
           },
@@ -34,11 +40,16 @@
               "design",
               "development",
               "testing",
-              "deployment_release",
-              "environment_production",
+              "build_release",
+              "production_operations",
+              "not_applicable",
               "unknown"
             ],
             "description": "The SDLC phase where this defect's root cause was introduced or should have been caught."
+          },
+          "evidence": {
+            "type": "string",
+            "description": "Which field(s) drove the call, e.g. 'title + tag QA miss' or 'root_cause_raw'. One short phrase."
           },
           "summary": {
             "type": "string",
@@ -55,6 +66,7 @@
           "root_cause_category",
           "testing_gap_flag",
           "sdlc_phase",
+          "evidence",
           "summary",
           "confidence"
         ]

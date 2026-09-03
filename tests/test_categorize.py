@@ -38,9 +38,10 @@ class FakeProvider(LlmProvider):
         results = [
             {
                 "defect_id": d["defect_id"],
-                "root_cause_category": "code_defect",
+                "root_cause_category": "coding_error",
                 "testing_gap_flag": True,
                 "sdlc_phase": "development",
+                "evidence": "title + resolution_notes",
                 "summary": "stub",
                 "confidence": 0.8,
             }
@@ -86,7 +87,7 @@ def test_run_categorize_stores_results(tmp_path: Path):
 
     assert count == 1
     categorized = store.get_categorized_defects()
-    assert categorized[0]["root_cause_category"] == "code_defect"
+    assert categorized[0]["root_cause_category"] == "coding_error"
     assert categorized[0]["sdlc_phase"] == "development"
     # The prompt payload must carry state/disposition/root_cause_raw so the LLM
     # can cross-reference them, not just title/description.
@@ -104,7 +105,7 @@ def test_run_categorize_defaults_invalid_sdlc_phase_to_unknown(tmp_path: Path):
         "results": [
             {
                 "defect_id": 1,
-                "root_cause_category": "code_defect",
+                "root_cause_category": "coding_error",
                 "testing_gap_flag": True,
                 "sdlc_phase": "not_a_real_phase",
                 "summary": "stub",
@@ -288,6 +289,7 @@ def test_run_categorize_records_provenance(tmp_path: Path):
     run_categorize(config, provider=FakeProvider())
 
     row = store.get_categorized_defects()[0]
+    assert row["evidence"] == "title + resolution_notes"
     assert row["model"] == "fake-model-v1"
     # Derived from the prompt text, so it changes whenever the prompt does.
     assert row["prompt_version"] and len(row["prompt_version"]) == 12
@@ -309,7 +311,7 @@ def test_run_categorize_coerces_and_clamps_confidence(
         "results": [
             {
                 "defect_id": 1,
-                "root_cause_category": "code_defect",
+                "root_cause_category": "coding_error",
                 "testing_gap_flag": True,
                 "sdlc_phase": "development",
                 "summary": "stub",
@@ -329,7 +331,7 @@ def _malformed_response() -> dict:
         "results": [
             {
                 "defect_id": 1,
-                "root_cause_category": "code_defect",
+                "root_cause_category": "coding_error",
                 "testing_gap_flag": True,
                 "summary": "stub",
                 "confidence": "very high",

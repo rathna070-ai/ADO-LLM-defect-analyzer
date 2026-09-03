@@ -63,6 +63,9 @@ class DefectCategorization:
     summary: str
     confidence: float
     sdlc_phase: str = "unknown"
+    # Which fields the model says drove the call — makes a low-confidence
+    # judgment reviewable instead of opaque.
+    evidence: str = ""
     # Provenance: which model and prompt revision produced this judgment, and
     # when. Without these, a stored categorization can't be audited or
     # selectively re-run after a prompt or model change.

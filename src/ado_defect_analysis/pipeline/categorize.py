@@ -272,6 +272,7 @@ def _categorize_batch(
                 summary=entry.get("summary", ""),
                 confidence=_parse_confidence(entry.get("confidence"), defect_id),
                 sdlc_phase=sdlc_phase,
+                evidence=str(entry.get("evidence", ""))[:200],
                 model=provider.model_name,
                 prompt_version=_PROMPT_VERSION,
                 categorized_at=categorized_at,

@@ -45,7 +45,7 @@ def _seed(db_path: Path, analyzed: bool = True) -> None:
             [
                 DefectCategorization(
                     defect_id=i,
-                    root_cause_category="code_defect" if i % 2 else "testing_gap",
+                    root_cause_category="coding_error" if i % 2 else "test_gap",
                     testing_gap_flag=bool(i % 2),
                     summary="stub",
                     confidence=0.9 if i % 2 else 0.4,

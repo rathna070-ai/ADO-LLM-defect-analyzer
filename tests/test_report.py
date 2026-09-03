@@ -8,7 +8,7 @@ from ado_defect_analysis.models import Defect, DefectCategorization
 from ado_defect_analysis.pipeline.report import run_report
 from ado_defect_analysis.storage import DefectStore
 
-_NARRATIVE = {"headline": "Defects trending down", "top_root_causes": ["code_defect"]}
+_NARRATIVE = {"headline": "Defects trending down", "top_root_causes": ["coding_error"]}
 
 
 class FakeProvider(LlmProvider):
@@ -60,7 +60,7 @@ def _seed(config: Config) -> DefectStore:
         [
             DefectCategorization(
                 defect_id=1,
-                root_cause_category="code_defect",
+                root_cause_category="coding_error",
                 testing_gap_flag=False,
                 summary="stub",
                 confidence=0.9,

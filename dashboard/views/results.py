@@ -107,13 +107,12 @@ def render(config: Config) -> None:
     if review_df.empty:
         st.success("Nothing flagged for review.")
     else:
-        st.dataframe(
-            review_df[
-                ["id", "title", "root_cause_category", "sdlc_phase", "confidence", "summary"]
-            ],
-            width="stretch",
-            hide_index=True,
-        )
+        columns = ["id", "title", "root_cause_category", "sdlc_phase", "confidence"]
+        # Present only after a re-run on the current prompt.
+        if "evidence" in review_df.columns:
+            columns.append("evidence")
+        columns.append("summary")
+        st.dataframe(review_df[columns], width="stretch", hide_index=True)
 
     st.subheader("Analyzed defects")
     st.dataframe(df, width="stretch")

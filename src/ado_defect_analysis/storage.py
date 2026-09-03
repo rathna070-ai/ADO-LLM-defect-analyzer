@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS categorizations (
     summary TEXT NOT NULL,
     confidence REAL NOT NULL,
     sdlc_phase TEXT,
+    evidence TEXT,
     model TEXT,
     prompt_version TEXT,
     categorized_at TEXT,
@@ -56,6 +57,7 @@ _MIGRATIONS = {
     ],
     "categorizations": [
         ("sdlc_phase", "TEXT"),
+        ("evidence", "TEXT"),
         ("model", "TEXT"),
         ("prompt_version", "TEXT"),
         ("categorized_at", "TEXT"),
@@ -184,14 +186,15 @@ class DefectStore:
                 """
                 INSERT INTO categorizations
                     (defect_id, root_cause_category, testing_gap_flag, summary, confidence,
-                     sdlc_phase, model, prompt_version, categorized_at, input_hash)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     sdlc_phase, evidence, model, prompt_version, categorized_at, input_hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(defect_id) DO UPDATE SET
                     root_cause_category=excluded.root_cause_category,
                     testing_gap_flag=excluded.testing_gap_flag,
                     summary=excluded.summary,
                     confidence=excluded.confidence,
                     sdlc_phase=excluded.sdlc_phase,
+                    evidence=excluded.evidence,
                     model=excluded.model,
                     prompt_version=excluded.prompt_version,
                     categorized_at=excluded.categorized_at,
@@ -205,6 +208,7 @@ class DefectStore:
                         c.summary,
                         c.confidence,
                         c.sdlc_phase,
+                        c.evidence,
                         c.model,
                         c.prompt_version,
                         c.categorized_at,
@@ -223,7 +227,8 @@ class DefectStore:
             rows = conn.execute(
                 """
                 SELECT d.*, c.root_cause_category, c.testing_gap_flag, c.summary, c.confidence,
-                       c.sdlc_phase, c.model, c.prompt_version, c.categorized_at, c.input_hash
+                       c.sdlc_phase, c.evidence, c.model, c.prompt_version, c.categorized_at,
+                       c.input_hash
                 FROM defects d
                 JOIN categorizations c ON c.defect_id = d.id
                 """

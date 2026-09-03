@@ -33,7 +33,7 @@ def _defect(defect_id: int) -> Defect:
     )
 
 
-def _categorization(defect_id: int, confidence: float, category: str = "code_defect"):
+def _categorization(defect_id: int, confidence: float, category: str = "coding_error"):
     return DefectCategorization(
         defect_id=defect_id,
         root_cause_category=category,

@@ -38,7 +38,7 @@ def test_categorized_defects_excluded_from_pending(tmp_path: Path):
         [
             DefectCategorization(
                 defect_id=1,
-                root_cause_category="code_defect",
+                root_cause_category="coding_error",
                 testing_gap_flag=True,
                 summary="Null check missing.",
                 confidence=0.9,
@@ -52,7 +52,7 @@ def test_categorized_defects_excluded_from_pending(tmp_path: Path):
 
     assert [d.id for d in pending] == [2]
     assert len(categorized) == 1
-    assert categorized[0]["root_cause_category"] == "code_defect"
+    assert categorized[0]["root_cause_category"] == "coding_error"
     assert categorized[0]["sdlc_phase"] == "development"
     assert categorized[0]["iteration_path"] == "App\\Sprint 12"
     assert categorized[0]["resolution"] == "Fixed"
@@ -65,7 +65,7 @@ def test_get_all_defects_includes_already_categorized(tmp_path: Path):
         [
             DefectCategorization(
                 defect_id=1,
-                root_cause_category="code_defect",
+                root_cause_category="coding_error",
                 testing_gap_flag=True,
                 summary="Null check missing.",
                 confidence=0.9,
@@ -122,7 +122,7 @@ def test_upgrades_db_created_with_old_schema(tmp_path: Path):
         [
             DefectCategorization(
                 defect_id=1,
-                root_cause_category="code_defect",
+                root_cause_category="coding_error",
                 testing_gap_flag=False,
                 summary="s",
                 confidence=0.8,
