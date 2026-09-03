@@ -281,6 +281,45 @@ def test_progress_advances_past_a_failed_batch(tmp_path: Path):
     assert seen[-1].failed_batches == 1
 
 
+def test_categorize_can_be_scoped_to_selected_sources(tmp_path: Path):
+    """Running one upload must not sweep in every other defect loaded."""
+    config = _config(tmp_path)
+    store = DefectStore(config.db_path)
+    store.upsert_defects(
+        [
+            _defect(1, source_name="sprint10.xlsx"),
+            _defect(2, source_name="sprint10.xlsx"),
+            _defect(3, source_name="sprint11.xlsx"),
+        ]
+    )
+
+    count = run_categorize(config, provider=FakeProvider(), sources=["sprint10.xlsx"])
+
+    assert count == 2
+    assert sorted(d["id"] for d in store.get_categorized_defects()) == [1, 2]
+
+
+def test_scoped_run_skips_already_analyzed_unless_asked(tmp_path: Path):
+    config = _config(tmp_path)
+    store = DefectStore(config.db_path)
+    store.upsert_defects([_defect(1, source_name="a.xlsx"), _defect(2, source_name="a.xlsx")])
+    run_categorize(config, provider=FakeProvider(), sources=["a.xlsx"])
+
+    # Nothing outstanding, so a plain scoped run has no work.
+    assert run_categorize(config, provider=FakeProvider(), sources=["a.xlsx"]) == 0
+    # Asking for a re-run reaches them, forced past the unchanged-input skip.
+    assert (
+        run_categorize(
+            config,
+            provider=FakeProvider(),
+            sources=["a.xlsx"],
+            recategorize_all=True,
+            force=True,
+        )
+        == 2
+    )
+
+
 def test_run_categorize_records_provenance(tmp_path: Path):
     config = _config(tmp_path)
     store = DefectStore(config.db_path)

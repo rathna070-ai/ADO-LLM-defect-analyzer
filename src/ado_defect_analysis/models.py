@@ -38,6 +38,12 @@ class Defect:
     user_impact: str = ""
     parent: str = ""
     work_item_type: str = ""
+    # Which upload this defect arrived in. Defects still upsert by id, so a
+    # re-upload re-stamps the row with the newer source — the question these
+    # answer is "which batch does this belong to now", not "every batch it has
+    # ever appeared in".
+    source_name: str = ""
+    source_uploaded_at: str = ""
 
     @classmethod
     def from_work_item(

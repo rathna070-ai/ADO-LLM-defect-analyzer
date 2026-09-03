@@ -73,6 +73,64 @@ def test_query_fetch_rejects_a_bad_url(tmp_path: Path):
         run_fetch_from_query(_config(tmp_path), "https://example.com/nope", pat="token")
 
 
+def test_each_upload_is_tracked_as_its_own_source(tmp_path: Path):
+    """Uploads must stay distinguishable rather than merging into one pool."""
+    config = _config(tmp_path)
+    first = tmp_path / "sprint10.xlsx"
+    second = tmp_path / "sprint11.xlsx"
+    pd.DataFrame([{"ID": 1, "Title": "A"}, {"ID": 2, "Title": "B"}]).to_excel(first, index=False)
+    pd.DataFrame([{"ID": 3, "Title": "C"}]).to_excel(second, index=False)
+
+    run_fetch_from_excel(config, first)
+    run_fetch_from_excel(config, second)
+
+    sources = DefectStore(config.db_path).get_upload_sources()
+    by_name = {s["name"]: s for s in sources}
+    assert by_name["sprint10.xlsx"]["total"] == 2
+    assert by_name["sprint11.xlsx"]["total"] == 1
+    assert by_name["sprint10.xlsx"]["uncategorized"] == 2
+
+
+def test_upload_source_name_can_be_overridden(tmp_path: Path):
+    """The UI writes to a temp file, so the batch is labelled with the
+    original filename rather than the generated one."""
+    config = _config(tmp_path)
+    temp = tmp_path / "tmp1234.xlsx"
+    pd.DataFrame([{"ID": 1, "Title": "A"}]).to_excel(temp, index=False)
+
+    run_fetch_from_excel(config, temp, source_name="Q3 defects.xlsx")
+
+    assert DefectStore(config.db_path).get_upload_sources()[0]["name"] == "Q3 defects.xlsx"
+
+
+def test_selecting_a_source_returns_only_its_defects(tmp_path: Path):
+    config = _config(tmp_path)
+    first = tmp_path / "a.xlsx"
+    second = tmp_path / "b.xlsx"
+    pd.DataFrame([{"ID": 1, "Title": "A"}]).to_excel(first, index=False)
+    pd.DataFrame([{"ID": 2, "Title": "B"}]).to_excel(second, index=False)
+    run_fetch_from_excel(config, first)
+    run_fetch_from_excel(config, second)
+    store = DefectStore(config.db_path)
+
+    assert [d.id for d in store.get_defects_for_sources(["a.xlsx"])] == [1]
+    assert sorted(d.id for d in store.get_defects_for_sources(["a.xlsx", "b.xlsx"])) == [1, 2]
+    assert store.get_defects_for_sources([]) == []
+
+
+def test_reuploading_a_defect_moves_it_to_the_newer_source(tmp_path: Path):
+    config = _config(tmp_path)
+    first = tmp_path / "old.xlsx"
+    second = tmp_path / "new.xlsx"
+    pd.DataFrame([{"ID": 1, "Title": "A"}]).to_excel(first, index=False)
+    pd.DataFrame([{"ID": 1, "Title": "A revised"}]).to_excel(second, index=False)
+    run_fetch_from_excel(config, first)
+    run_fetch_from_excel(config, second)
+
+    sources = {s["name"]: s["total"] for s in DefectStore(config.db_path).get_upload_sources()}
+    assert sources == {"new.xlsx": 1}
+
+
 def test_excel_import_is_idempotent(tmp_path: Path):
     """Re-running fetch against the same export must not duplicate rows."""
     export = tmp_path / "export.xlsx"

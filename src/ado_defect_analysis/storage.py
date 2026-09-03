@@ -15,6 +15,9 @@ from pathlib import Path
 
 from .models import Defect, DefectCategorization
 
+#: Label for defects loaded before uploads were tracked by source.
+UNKNOWN_SOURCE = "(earlier upload)"
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS defects (
     id INTEGER PRIMARY KEY,
@@ -38,7 +41,9 @@ CREATE TABLE IF NOT EXISTS defects (
     introduced_in_year TEXT,
     user_impact TEXT,
     parent TEXT,
-    work_item_type TEXT
+    work_item_type TEXT,
+    source_name TEXT,
+    source_uploaded_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS categorizations (
@@ -70,6 +75,8 @@ _MIGRATIONS = {
         ("user_impact", "TEXT"),
         ("parent", "TEXT"),
         ("work_item_type", "TEXT"),
+        ("source_name", "TEXT"),
+        ("source_uploaded_at", "TEXT"),
     ],
     "categorizations": [
         ("sdlc_phase", "TEXT"),
@@ -124,8 +131,8 @@ class DefectStore:
                      tags, comments, iteration_path, resolution,
                      sdlc_phase_raw, environment, found_in_environment,
                      introduced_in_month, introduced_in_year, user_impact, parent,
-                     work_item_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     work_item_type, source_name, source_uploaded_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     title=excluded.title,
                     description=excluded.description,
@@ -147,7 +154,9 @@ class DefectStore:
                     introduced_in_year=excluded.introduced_in_year,
                     user_impact=excluded.user_impact,
                     parent=excluded.parent,
-                    work_item_type=excluded.work_item_type
+                    work_item_type=excluded.work_item_type,
+                    source_name=excluded.source_name,
+                    source_uploaded_at=excluded.source_uploaded_at
                 """,
                 [
                     (
@@ -173,6 +182,8 @@ class DefectStore:
                         d.user_impact,
                         d.parent,
                         d.work_item_type,
+                        d.source_name,
+                        d.source_uploaded_at,
                     )
                     for d in defects
                 ],
@@ -193,6 +204,53 @@ class DefectStore:
         """All defects regardless of categorization status — used to force a full re-categorize."""
         with self._connect() as conn:
             rows = conn.execute("SELECT * FROM defects").fetchall()
+        return [_row_to_defect(row) for row in rows]
+
+    def get_upload_sources(self) -> list[dict]:
+        """One row per upload: name, when, and how much of it is analyzed.
+
+        Drives the source picker — the user chooses which upload(s) to run
+        rather than every defect ever loaded being swept into one pool.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    COALESCE(NULLIF(d.source_name, ''), ?) AS name,
+                    MAX(COALESCE(d.source_uploaded_at, '')) AS uploaded_at,
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN c.defect_id IS NULL THEN 0 ELSE 1 END) AS categorized
+                FROM defects d
+                LEFT JOIN categorizations c ON c.defect_id = d.id
+                GROUP BY name
+                ORDER BY uploaded_at DESC, name
+                """,
+                (UNKNOWN_SOURCE,),
+            ).fetchall()
+        return [
+            {
+                "name": row["name"],
+                "uploaded_at": row["uploaded_at"] or "",
+                "total": int(row["total"]),
+                "categorized": int(row["categorized"] or 0),
+                "uncategorized": int(row["total"]) - int(row["categorized"] or 0),
+            }
+            for row in rows
+        ]
+
+    def get_defects_for_sources(self, sources: list[str]) -> list[Defect]:
+        """Every defect belonging to the named uploads."""
+        if not sources:
+            return []
+        placeholders = ",".join("?" for _ in sources)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM defects
+                WHERE COALESCE(NULLIF(source_name, ''), ?) IN ({placeholders})
+                """,
+                (UNKNOWN_SOURCE, *sources),
+            ).fetchall()
         return [_row_to_defect(row) for row in rows]
 
     def get_categorization_fingerprints(self) -> dict[int, tuple[str, str, str]]:
@@ -295,4 +353,6 @@ def _row_to_defect(row: sqlite3.Row) -> Defect:
         user_impact=row["user_impact"] or "",
         parent=row["parent"] or "",
         work_item_type=row["work_item_type"] or "",
+        source_name=row["source_name"] or "",
+        source_uploaded_at=row["source_uploaded_at"] or "",
     )

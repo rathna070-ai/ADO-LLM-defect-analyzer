@@ -70,6 +70,7 @@ def run_categorize(
     recategorize_all: bool = False,
     force: bool = False,
     on_progress: ProgressCallback | None = None,
+    sources: list[str] | None = None,
 ) -> int:
     """Returns the number of defects categorized.
 
@@ -85,7 +86,16 @@ def run_categorize(
     store = DefectStore(config.db_path)
     provider = provider or get_llm_provider(config.llm)
 
-    pending = store.get_all_defects() if recategorize_all else store.get_uncategorized_defects()
+    if sources is not None:
+        # Scoped to chosen uploads. `recategorize_all` then means "include the
+        # already-analyzed defects in those uploads" rather than "every defect
+        # in the database".
+        pending = store.get_defects_for_sources(sources)
+        if not recategorize_all:
+            uncategorized = {d.id for d in store.get_uncategorized_defects()}
+            pending = [d for d in pending if d.id in uncategorized]
+    else:
+        pending = store.get_all_defects() if recategorize_all else store.get_uncategorized_defects()
     if recategorize_all and not force:
         pending = _drop_unchanged(pending, store, provider.model_name)
     if not pending:

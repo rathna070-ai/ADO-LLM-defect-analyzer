@@ -13,15 +13,25 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ..ado_client import AdoClient
 from ..ado_query import parse_query_url
 from ..config import Config
 from ..excel_source import parse_excel
+from ..models import Defect
 from ..storage import DefectStore
 
 logger = logging.getLogger(__name__)
+
+
+def _stamp_source(defects: list[Defect], source_name: str) -> None:
+    """Tag a batch with where it came from, so uploads stay distinguishable."""
+    uploaded_at = datetime.now(timezone.utc).isoformat()
+    for defect in defects:
+        defect.source_name = source_name
+        defect.source_uploaded_at = uploaded_at
 
 
 def run_fetch_from_query(config: Config, query_url: str, pat: str | None = None) -> int:
@@ -42,6 +52,7 @@ def run_fetch_from_query(config: Config, query_url: str, pat: str | None = None)
 
     client = AdoClient(ado)
     defects = client.fetch_defects_for_query(ref.identifier)
+    _stamp_source(defects, f"{ref.project} query {ref.identifier}")
 
     store = DefectStore(config.db_path)
     store.upsert_defects(defects)
@@ -62,6 +73,7 @@ def run_fetch(config: Config) -> int:
     store = DefectStore(config.db_path)
 
     defects = client.fetch_closed_defects()
+    _stamp_source(defects, f"{config.ado.project} API fetch")
     store.upsert_defects(defects)
 
     logger.info("Fetched and stored %d defects from Azure DevOps.", len(defects))
@@ -69,16 +81,23 @@ def run_fetch(config: Config) -> int:
 
 
 def run_fetch_from_excel(
-    config: Config, file_path: Path, column_map: dict[str, list[str]] | None = None
+    config: Config,
+    file_path: Path,
+    column_map: dict[str, list[str]] | None = None,
+    source_name: str | None = None,
 ) -> int:
     """Load defects from an ADO Excel/CSV export. Returns the count stored.
 
     No ADO API access required — this is the path for environments that
     won't issue a PAT, or when someone already has the export in hand.
+
+    `source_name` labels the batch; the UI passes the user's original filename
+    because the file itself lands in a temp path with a generated name.
     """
     store = DefectStore(config.db_path)
 
     defects = parse_excel(file_path, column_map=column_map)
+    _stamp_source(defects, source_name or file_path.name)
     store.upsert_defects(defects)
 
     logger.info("Loaded and stored %d defects from %s.", len(defects), file_path)

@@ -81,36 +81,58 @@ def test_home_page_offers_both_data_sources(app: Path):
     at = _run(app)
 
     assert not at.exception
-    assert at.radio[0].options == [
-        "Upload a file from my computer",
-        "Azure DevOps query link",
-    ]
-    assert at.get("file_uploader")  # the browse control
+    assert at.radio[0].options == ["Upload file", "ADO link"]
+    assert "Start" in [b.label for b in at.button]
+    # Upload is the default mode, so the browse control is present immediately.
+    assert at.get("file_uploader")
     assert "Upload" in [b.label for b in at.button]
 
 
-def test_selecting_the_query_source_swaps_in_the_url_and_token_inputs(app: Path):
+def test_selecting_the_ado_link_source_swaps_in_the_url_and_token_inputs(app: Path):
     _seed(app / "ui.db", analyzed=False)
     at = _run(app)
 
-    at.radio[0].set_value("Azure DevOps query link").run()
+    at.radio[0].set_value("ADO link").run()
+    next(b for b in at.button if b.label == "Start").click().run()
 
     assert not at.exception
     labels = [t.label for t in at.text_input]
-    assert "Query URL" in labels
+    assert "ADO query link" in labels
     assert "Personal access token" in labels
     assert "Fetch from Azure DevOps" in [b.label for b in at.button]
 
 
-def test_home_reports_how_much_is_loaded_and_analyzed(app: Path):
+def test_home_reports_the_three_counts(app: Path):
     _seed(app / "ui.db")
 
     at = _run(app)
 
     metrics = {m.label: m.value for m in at.metric}
-    assert metrics["Defects loaded"] == "6"
-    assert metrics["Already analyzed"] == "6"
-    assert metrics["Awaiting analysis"] == "0"
+    assert metrics["Total defects"] == "6"
+    assert metrics["Processed"] == "6"
+    assert metrics["Unprocessed"] == "0"
+
+
+def test_home_lists_each_upload_as_a_selectable_row(app: Path):
+    """The point of the feature: uploads stay separately selectable."""
+    _seed(app / "ui.db", analyzed=False)
+    store = DefectStore(app / "ui.db")
+    loaded = store.get_all_defects()
+    for defect in loaded[:2]:
+        defect.source_name = "sprint10.xlsx"
+        defect.source_uploaded_at = "2026-01-01T00:00:00+00:00"
+    for defect in loaded[2:]:
+        defect.source_name = "sprint11.xlsx"
+        defect.source_uploaded_at = "2026-02-01T00:00:00+00:00"
+    store.upsert_defects(loaded)
+
+    at = _run(app)
+
+    assert not at.exception
+    labels = [c.label for c in at.checkbox]
+    assert any("sprint10.xlsx" in label and "2 defect(s)" in label for label in labels)
+    assert any("sprint11.xlsx" in label and "4 defect(s)" in label for label in labels)
+    assert "Run analyzer" in [b.label for b in at.button]
 
 
 def test_dashboard_renders_every_section(app: Path):
