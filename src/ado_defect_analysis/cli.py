@@ -48,7 +48,17 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "Re-run categorization for every defect in the DB, not just uncategorized "
             "ones. Use this to backfill a newly added categorization field (e.g. "
-            "sdlc_phase) onto defects categorized before the field existed."
+            "sdlc_phase) onto defects categorized before the field existed. Defects "
+            "whose fields, prompt, and model are all unchanged are skipped."
+        ),
+    )
+    categorize_parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "With --recategorize-all, re-send even defects whose inputs, prompt, and "
+            "model are unchanged. Costs a full re-run; use it to resample a "
+            "non-deterministic model."
         ),
     )
     subparsers.add_parser("report", help="Generate the exec-tone narrative summary.")
@@ -80,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"Fetched {count} defects.")
     elif args.command == "categorize":
-        count = run_categorize(config, recategorize_all=args.recategorize_all)
+        count = run_categorize(config, recategorize_all=args.recategorize_all, force=args.force)
         print(f"Categorized {count} defects.")
     elif args.command == "report":
         narrative = run_report(config)

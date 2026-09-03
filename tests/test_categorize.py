@@ -113,14 +113,19 @@ def test_run_categorize_defaults_invalid_sdlc_phase_to_unknown(tmp_path: Path):
     assert categorized[0]["sdlc_phase"] == "unknown"
 
 
-def test_run_categorize_recategorize_all_reprocesses_existing(tmp_path: Path):
+def test_run_categorize_recategorize_all_reaches_already_categorized_defects(tmp_path: Path):
+    """--recategorize-all widens the net past uncategorized-only.
+
+    Forced here so the unchanged-input skip doesn't mask what's under test;
+    the skip itself is covered by test_recategorize_all_skips_unchanged_defects.
+    """
     config = _config(tmp_path)
     store = DefectStore(config.db_path)
     store.upsert_defects([_defect(1)])
     run_categorize(config, provider=FakeProvider())
     assert store.get_uncategorized_defects() == []
 
-    count = run_categorize(config, provider=FakeProvider(), recategorize_all=True)
+    count = run_categorize(config, provider=FakeProvider(), recategorize_all=True, force=True)
 
     assert count == 1
 
@@ -132,6 +137,62 @@ def test_run_categorize_returns_zero_when_nothing_pending(tmp_path: Path):
     count = run_categorize(config, provider=FakeProvider())
 
     assert count == 0
+
+
+def test_recategorize_all_skips_unchanged_defects(tmp_path: Path):
+    """The whole point: a backfill shouldn't re-bill work that can't change."""
+    config = _config(tmp_path)
+    store = DefectStore(config.db_path)
+    store.upsert_defects([_defect(1), _defect(2)])
+    run_categorize(config, provider=FakeProvider())
+
+    second = FakeProvider()
+    count = run_categorize(config, provider=second, recategorize_all=True)
+
+    assert count == 0
+    assert second.last_defects == []  # nothing was sent to the model at all
+
+
+def test_recategorize_all_resends_when_defect_fields_change(tmp_path: Path):
+    config = _config(tmp_path)
+    store = DefectStore(config.db_path)
+    store.upsert_defects([_defect(1), _defect(2)])
+    run_categorize(config, provider=FakeProvider())
+
+    # Defect 2's description changes, so only it should go back to the model.
+    store.upsert_defects([_defect(2, description="now with a stack trace")])
+    second = FakeProvider()
+    count = run_categorize(config, provider=second, recategorize_all=True)
+
+    assert count == 1
+    assert [d["defect_id"] for d in second.last_defects] == [2]
+
+
+def test_recategorize_all_resends_when_model_changes(tmp_path: Path):
+    config = _config(tmp_path)
+    store = DefectStore(config.db_path)
+    store.upsert_defects([_defect(1)])
+    run_categorize(config, provider=FakeProvider())
+
+    class OtherModel(FakeProvider):
+        @property
+        def model_name(self) -> str:
+            return "different-model-v2"
+
+    count = run_categorize(config, provider=OtherModel(), recategorize_all=True)
+
+    assert count == 1
+
+
+def test_force_overrides_the_unchanged_skip(tmp_path: Path):
+    config = _config(tmp_path)
+    store = DefectStore(config.db_path)
+    store.upsert_defects([_defect(1)])
+    run_categorize(config, provider=FakeProvider())
+
+    count = run_categorize(config, provider=FakeProvider(), recategorize_all=True, force=True)
+
+    assert count == 1
 
 
 def test_run_categorize_records_provenance(tmp_path: Path):

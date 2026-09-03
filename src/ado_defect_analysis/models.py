@@ -69,6 +69,9 @@ class DefectCategorization:
     model: str = ""
     prompt_version: str = ""
     categorized_at: str = ""
+    # Fingerprint of the defect fields sent to the model, so a re-run can tell
+    # whether anything it saw actually changed.
+    input_hash: str = ""
 
 
 def strip_html(value: str) -> str:

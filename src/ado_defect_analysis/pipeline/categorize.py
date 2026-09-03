@@ -43,7 +43,10 @@ _VALID_SDLC_PHASES = set(
 
 
 def run_categorize(
-    config: Config, provider: LlmProvider | None = None, recategorize_all: bool = False
+    config: Config,
+    provider: LlmProvider | None = None,
+    recategorize_all: bool = False,
+    force: bool = False,
 ) -> int:
     """Returns the number of defects categorized.
 
@@ -51,11 +54,17 @@ def run_categorize(
     uncategorized ones — use it to backfill a newly added categorization field
     (e.g. `sdlc_phase`) onto defects categorized before the field existed.
     `save_categorizations` upserts by defect id, so this is safe to re-run.
+
+    A re-run skips defects whose input fields, prompt version, and model all
+    match what produced the stored answer, since re-asking would only buy the
+    same result at full token price. `force` disables that check.
     """
     store = DefectStore(config.db_path)
     provider = provider or get_llm_provider(config.llm)
 
     pending = store.get_all_defects() if recategorize_all else store.get_uncategorized_defects()
+    if recategorize_all and not force:
+        pending = _drop_unchanged(pending, store, provider.model_name)
     if not pending:
         logger.info(
             "No defects to categorize." if recategorize_all else "No uncategorized defects found."
@@ -100,30 +109,62 @@ def run_categorize(
     return total
 
 
+def _drop_unchanged(defects: list[Defect], store: DefectStore, model_name: str) -> list[Defect]:
+    """Filter out defects whose stored judgment would come out the same.
+
+    Nothing changes the answer unless the defect's own fields changed, the
+    prompt changed, or the model changed — so anything matching on all three
+    is left alone rather than re-billed.
+    """
+    fingerprints = store.get_categorization_fingerprints()
+    changed = []
+    for defect in defects:
+        stored = fingerprints.get(defect.id)
+        if stored is not None and stored == (_input_hash(defect), _PROMPT_VERSION, model_name):
+            continue
+        changed.append(defect)
+
+    skipped = len(defects) - len(changed)
+    if skipped:
+        logger.info(
+            "Skipping %d defect(s) already categorized with the same inputs, prompt, and model.",
+            skipped,
+        )
+    return changed
+
+
+def _defect_payload(defect: Defect) -> dict[str, object]:
+    """The exact per-defect fields the model is shown.
+
+    Single source of truth for both the prompt and `_input_hash`, so the
+    "has this defect changed?" check can never drift from what was actually
+    sent to the model.
+    """
+    return {
+        "defect_id": defect.id,
+        "title": defect.title,
+        "description": defect.description[:2000],
+        "module": defect.module,
+        "severity": defect.severity,
+        "state": defect.state,
+        "disposition": defect.resolution,
+        "resolution_notes": defect.resolution_notes[:2000],
+        "root_cause_raw": defect.root_cause_raw,
+        "tags": defect.tags,
+        "comments": defect.comments[:2000],
+    }
+
+
+def _input_hash(defect: Defect) -> str:
+    """Fingerprint of everything the model sees for this defect."""
+    canonical = json.dumps(_defect_payload(defect), sort_keys=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
 def _categorize_batch(
     provider: LlmProvider, batch: list[Defect], config: Config
 ) -> list[DefectCategorization]:
-    user_prompt = json.dumps(
-        {
-            "defects": [
-                {
-                    "defect_id": d.id,
-                    "title": d.title,
-                    "description": d.description[:2000],
-                    "module": d.module,
-                    "severity": d.severity,
-                    "state": d.state,
-                    "disposition": d.resolution,
-                    "resolution_notes": d.resolution_notes[:2000],
-                    "root_cause_raw": d.root_cause_raw,
-                    "tags": d.tags,
-                    "comments": d.comments[:2000],
-                }
-                for d in batch
-            ]
-        },
-        indent=2,
-    )
+    user_prompt = json.dumps({"defects": [_defect_payload(d) for d in batch]}, indent=2)
 
     result = provider.complete_json(
         system_prompt=_SYSTEM_PROMPT,
@@ -134,6 +175,7 @@ def _categorize_batch(
     )
 
     known_ids = {d.id for d in batch}
+    hashes = {d.id: _input_hash(d) for d in batch}
     categorized_at = datetime.now(timezone.utc).isoformat()
     categorizations: list[DefectCategorization] = []
     for entry in result.get("results", []):
@@ -168,6 +210,7 @@ def _categorize_batch(
                 model=provider.model_name,
                 prompt_version=_PROMPT_VERSION,
                 categorized_at=categorized_at,
+                input_hash=hashes[defect_id],
             )
         )
 

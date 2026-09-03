@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS categorizations (
     sdlc_phase TEXT,
     model TEXT,
     prompt_version TEXT,
-    categorized_at TEXT
+    categorized_at TEXT,
+    input_hash TEXT
 );
 """
 
@@ -58,6 +59,7 @@ _MIGRATIONS = {
         ("model", "TEXT"),
         ("prompt_version", "TEXT"),
         ("categorized_at", "TEXT"),
+        ("input_hash", "TEXT"),
     ],
 }
 
@@ -156,14 +158,34 @@ class DefectStore:
             rows = conn.execute("SELECT * FROM defects").fetchall()
         return [_row_to_defect(row) for row in rows]
 
+    def get_categorization_fingerprints(self) -> dict[int, tuple[str, str, str]]:
+        """defect_id -> (input_hash, prompt_version, model) for what's already stored.
+
+        Lets a re-categorize run skip defects where none of the three inputs to
+        the judgment have changed, so a backfill only spends tokens on work
+        that would actually produce a different answer.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT defect_id, input_hash, prompt_version, model FROM categorizations"
+            ).fetchall()
+        return {
+            row["defect_id"]: (
+                row["input_hash"] or "",
+                row["prompt_version"] or "",
+                row["model"] or "",
+            )
+            for row in rows
+        }
+
     def save_categorizations(self, categorizations: list[DefectCategorization]) -> None:
         with self._connect() as conn:
             conn.executemany(
                 """
                 INSERT INTO categorizations
                     (defect_id, root_cause_category, testing_gap_flag, summary, confidence,
-                     sdlc_phase, model, prompt_version, categorized_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     sdlc_phase, model, prompt_version, categorized_at, input_hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(defect_id) DO UPDATE SET
                     root_cause_category=excluded.root_cause_category,
                     testing_gap_flag=excluded.testing_gap_flag,
@@ -172,7 +194,8 @@ class DefectStore:
                     sdlc_phase=excluded.sdlc_phase,
                     model=excluded.model,
                     prompt_version=excluded.prompt_version,
-                    categorized_at=excluded.categorized_at
+                    categorized_at=excluded.categorized_at,
+                    input_hash=excluded.input_hash
                 """,
                 [
                     (
@@ -185,6 +208,7 @@ class DefectStore:
                         c.model,
                         c.prompt_version,
                         c.categorized_at,
+                        c.input_hash,
                     )
                     for c in categorizations
                 ],
@@ -199,7 +223,7 @@ class DefectStore:
             rows = conn.execute(
                 """
                 SELECT d.*, c.root_cause_category, c.testing_gap_flag, c.summary, c.confidence,
-                       c.sdlc_phase, c.model, c.prompt_version, c.categorized_at
+                       c.sdlc_phase, c.model, c.prompt_version, c.categorized_at, c.input_hash
                 FROM defects d
                 JOIN categorizations c ON c.defect_id = d.id
                 """
