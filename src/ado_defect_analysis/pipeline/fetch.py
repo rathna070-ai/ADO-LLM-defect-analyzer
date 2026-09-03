@@ -11,15 +11,49 @@ through.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from pathlib import Path
 
 from ..ado_client import AdoClient
+from ..ado_query import parse_query_url
 from ..config import Config
 from ..excel_source import parse_excel
 from ..storage import DefectStore
 
 logger = logging.getLogger(__name__)
+
+
+def run_fetch_from_query(config: Config, query_url: str, pat: str | None = None) -> int:
+    """Pull the results of a saved ADO query. Returns the count stored.
+
+    The organization and project come from the URL rather than `.env`, so
+    someone can point this at any project their token can read without
+    editing config. `pat` overrides the configured token, which is what the
+    UI passes when the user types one in rather than storing it on disk.
+    """
+    ref = parse_query_url(query_url)
+    ado = dataclasses.replace(
+        config.ado,
+        organization=ref.organization,
+        project=ref.project,
+        pat=pat or config.ado.pat,
+    )
+
+    client = AdoClient(ado)
+    defects = client.fetch_defects_for_query(ref.identifier)
+
+    store = DefectStore(config.db_path)
+    store.upsert_defects(defects)
+
+    logger.info(
+        "Fetched and stored %d defects from query %s in %s/%s.",
+        len(defects),
+        ref.identifier,
+        ref.organization,
+        ref.project,
+    )
+    return len(defects)
 
 
 def run_fetch(config: Config) -> int:

@@ -11,9 +11,11 @@ pagination here. Retry/backoff comes from the shared session in `http.py`.
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
+from .ado_query import is_query_guid
 from .config import AdoConfig
 from .http import build_retrying_session
 from .models import Defect
@@ -64,6 +66,58 @@ class AdoClient:
             )
             for item in items
         ]
+
+    def fetch_defects_for_query(self, query: str) -> list[Defect]:
+        """Run a saved ADO query by GUID or folder path and return its results.
+
+        The alternative to `fetch_closed_defects`, which composes its own WIQL
+        from config. Here the query already encodes what the team considers in
+        scope, so nothing is filtered further — what the query returns is what
+        gets analyzed.
+        """
+        query_id = query if is_query_guid(query) else self._resolve_query_id(query)
+        url = f"{self._config.base_url}/wit/wiql/{query_id}?api-version={self._config.api_version}"
+        response = self._session.get(url, timeout=self._timeout)
+        self._raise_for_status(response, f"saved query '{query}'")
+
+        payload = response.json()
+        # A flat query returns workItems; a tree/one-hop query returns
+        # workItemRelations with the item under `target`.
+        ids = [item["id"] for item in payload.get("workItems", [])]
+        if not ids:
+            ids = [
+                relation["target"]["id"]
+                for relation in payload.get("workItemRelations", [])
+                if relation.get("target")
+            ]
+        if not ids:
+            return []
+
+        items = self._fetch_work_items(list(dict.fromkeys(ids)))
+        root_cause_field = self._config.root_cause_field
+        return [
+            Defect.from_work_item(
+                item,
+                root_cause_field,
+                comments=(
+                    self._fetch_comment_text(item["id"]) if self._config.fetch_comments else ""
+                ),
+            )
+            for item in items
+        ]
+
+    def _resolve_query_id(self, query_path: str) -> str:
+        """Look up a query's GUID from its folder path."""
+        url = (
+            f"{self._config.base_url}/wit/queries/{quote(query_path)}"
+            f"?api-version={self._config.api_version}"
+        )
+        response = self._session.get(url, timeout=self._timeout)
+        self._raise_for_status(response, f"query lookup for '{query_path}'")
+        query_id = response.json().get("id")
+        if not query_id:
+            raise AdoClientError(f"Azure DevOps returned no id for query '{query_path}'.")
+        return str(query_id)
 
     def _fetch_comment_text(self, work_item_id: int) -> str:
         """One request per work item — ADO has no batch endpoint for comments.

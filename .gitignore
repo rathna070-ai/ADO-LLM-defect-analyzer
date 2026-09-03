@@ -21,3 +21,7 @@ htmlcov/
 # Runtime-generated, not source
 data/*.db
 data/exports/
+
+# Locally generated sample export for exercising the upload flow — synthetic
+# data shouldn't be mistaken for a real extract.
+sample_ado_export.xlsx
