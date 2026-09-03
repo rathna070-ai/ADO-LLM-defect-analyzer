@@ -141,14 +141,19 @@ enforced locally.
 `LlmProvider` interface (`src/ado_defect_analysis/llm/base.py`) — it never imports
 Groq or Copilot directly — so switching providers is a config change:
 
-- `LLM_PROVIDER=groq` (default) — implemented, calls Groq's OpenAI-compatible chat
-  completions API. Needs `GROQ_API_KEY`.
-- `LLM_PROVIDER=copilot` — a placeholder for a future GitHub Copilot / GitHub Models
-  integration (`llm/copilot_provider.py`). It's wired into the factory and `Config`
-  already has `COPILOT_API_KEY`/`COPILOT_MODEL` fields, but `complete_json` currently
-  raises `LlmProviderError` explaining it isn't implemented yet. When Copilot exposes
-  a usable inference endpoint, that one class is what needs writing — no other file
-  in the pipeline changes.
+- `LLM_PROVIDER=groq` (default) — calls Groq's OpenAI-compatible chat completions
+  API. Needs `GROQ_API_KEY`. Defaults to `openai/gpt-oss-120b` at low reasoning
+  effort.
+- `LLM_PROVIDER=copilot` — GitHub Models. Needs `COPILOT_API_KEY` (a GitHub PAT with
+  the `models:read` scope; `GITHUB_TOKEN` works inside Actions) and a
+  publisher-qualified `COPILOT_MODEL` such as `openai/gpt-4o-mini`.
+  `COPILOT_BASE_URL` is overridable since GitHub has moved this endpoint before.
+  *Not yet exercised against the live endpoint — the contract is covered by mocked
+  tests, so treat your first real run as the verification step.*
+
+Both are thin subclasses of `llm/openai_compatible.py`, which holds the shared
+request/JSON-mode/error/usage handling — adding a third OpenAI-compatible backend
+is roughly ten lines.
 
 ## Repository layout
 
@@ -162,10 +167,11 @@ src/ado_defect_analysis/
   excel_source.py       ADO Excel/CSV export parser (no-API path)
   storage.py              SQLite persistence (defects, categorizations, migrations)
   llm/
-    base.py             LlmProvider interface
-    groq_provider.py     Groq implementation
-    copilot_provider.py  Future-provider placeholder (see above)
-    factory.py            LLM_PROVIDER -> LlmProvider
+    base.py             LlmProvider interface + token accounting
+    openai_compatible.py  Shared transport for OpenAI-dialect APIs
+    groq_provider.py       Groq endpoint/wording
+    copilot_provider.py     GitHub Models endpoint/wording
+    factory.py               LLM_PROVIDER -> LlmProvider
   prompts/               Markdown prompt templates
   schemas/                Expected JSON response shapes
   pipeline/

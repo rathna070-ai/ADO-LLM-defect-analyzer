@@ -22,7 +22,12 @@ def get_llm_provider(llm_config: LlmConfig) -> LlmProvider:
         return CopilotProvider(
             api_key=llm_config.copilot_api_key,
             model=llm_config.copilot_model,
+            base_url=llm_config.copilot_base_url,
             timeout_seconds=llm_config.request_timeout_seconds,
+            # LLM_REASONING_EFFORT is deliberately not forwarded here: it's
+            # tuned for Groq's gpt-oss default, and sending it to a
+            # non-reasoning model like the gpt-4o-mini default is a 400. Pass
+            # it explicitly if you point COPILOT_MODEL at an o-series model.
         )
     raise LlmProviderError(
         f"Unknown LLM_PROVIDER '{provider}'. Supported values: 'groq', 'copilot'."

@@ -76,7 +76,8 @@ class LlmConfig:
     groq_model: str = "openai/gpt-oss-120b"
     groq_base_url: str = "https://api.groq.com/openai/v1"
     copilot_api_key: str = ""
-    copilot_model: str = ""
+    copilot_model: str = "openai/gpt-4o-mini"
+    copilot_base_url: str = "https://models.github.ai/inference"
     request_timeout_seconds: int = 60
     temperature: float = 0.0
     # Sized for a reasoning model: gpt-oss-120b spends part of this budget on
@@ -149,7 +150,10 @@ class Config:
             groq_model=os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b"),
             groq_base_url=os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
             copilot_api_key=os.environ.get("COPILOT_API_KEY", ""),
-            copilot_model=os.environ.get("COPILOT_MODEL", ""),
+            copilot_model=os.environ.get("COPILOT_MODEL", "openai/gpt-4o-mini"),
+            copilot_base_url=os.environ.get(
+                "COPILOT_BASE_URL", "https://models.github.ai/inference"
+            ),
             request_timeout_seconds=_env_int("LLM_REQUEST_TIMEOUT_SECONDS", 60),
             temperature=float(os.environ.get("LLM_TEMPERATURE", "0.0")),
             max_tokens=_env_int("LLM_MAX_TOKENS", 5120),

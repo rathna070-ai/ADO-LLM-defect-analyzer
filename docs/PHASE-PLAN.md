@@ -126,10 +126,30 @@ upserting by id so re-running fetch — from either source — is safe.
   own batches so they share context; `fixed` (the default) keeps prompt length
   predictable.
 
-## Phase 8 — Copilot provider (future, placeholder only)
+## Phase 8 — GitHub Models provider (done)
 
-- Implement `llm/copilot_provider.py` for real once there's an API surface to target
-  (GitHub Models' OpenAI-compatible endpoint is the likely fit). No pipeline code
-  should need to change — `LLM_PROVIDER=copilot` is already a legal config value,
-  `Config` already carries `copilot_api_key`/`copilot_model`, and the factory already
-  wires the class in.
+- `llm/copilot_provider.py` is a real provider now, not a placeholder: GitHub Models
+  speaks the OpenAI chat-completions dialect, so the request shape, JSON mode, error
+  wrapping, and usage accounting are shared with Groq via
+  `llm/openai_compatible.py`. Each provider is a ~10-line subclass supplying its
+  endpoint and error wording.
+- Auth is a GitHub PAT with the `models:read` scope (`GITHUB_TOKEN` inside Actions).
+  `COPILOT_MODEL` takes publisher-qualified ids (default `openai/gpt-4o-mini`), and
+  `COPILOT_BASE_URL` is overridable because GitHub has moved this surface before.
+- `LLM_REASONING_EFFORT` is deliberately not forwarded to this provider — it's tuned
+  for Groq's gpt-oss default, and a non-reasoning model rejects it outright.
+- The seam held: switching providers is still config-only, and no pipeline stage
+  changed.
+- **Not yet run against the live endpoint** — there was no token available when it
+  was written. The contract is covered by mocked tests; the first real run is the
+  verification step.
+
+## Remaining
+
+Nothing in the phase plan is unbuilt. What's outstanding is verification rather than
+code:
+
+- The pipeline has never been run on real defects — every test uses a fake provider
+  or mocked HTTP, so field mappings, prompt accuracy, and the dashboard are
+  unvalidated against actual ADO data.
+- The GitHub Models provider needs one live run to confirm the endpoint contract.

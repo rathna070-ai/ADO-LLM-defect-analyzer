@@ -12,10 +12,20 @@ def test_factory_returns_groq_provider_when_configured():
     assert isinstance(provider, GroqProvider)
 
 
-def test_factory_returns_copilot_placeholder_when_configured():
-    config = LlmConfig(provider="copilot")
+def test_factory_returns_copilot_provider_when_configured():
+    config = LlmConfig(provider="copilot", copilot_api_key="test-key")
     provider = get_llm_provider(config)
     assert isinstance(provider, CopilotProvider)
+    assert provider.model_name == "openai/gpt-4o-mini"
+
+
+def test_factory_does_not_force_reasoning_effort_onto_copilot():
+    """The default effort is tuned for Groq's gpt-oss; gpt-4o-mini 400s on it."""
+    config = LlmConfig(provider="copilot", copilot_api_key="test-key", reasoning_effort="low")
+
+    provider = get_llm_provider(config)
+
+    assert provider._reasoning_effort == ""
 
 
 def test_factory_rejects_unknown_provider():
@@ -31,11 +41,6 @@ def test_groq_provider_requires_api_key():
         )
 
 
-def test_copilot_provider_is_not_implemented_yet():
-    provider = CopilotProvider(api_key="", model="")
-    with pytest.raises(LlmProviderError):
-        provider.complete_json(
-            system_prompt="system",
-            user_prompt="user",
-            schema={"type": "object"},
-        )
+def test_copilot_provider_requires_api_key():
+    with pytest.raises(LlmProviderError, match="COPILOT_API_KEY"):
+        CopilotProvider(api_key="", model="openai/gpt-4o-mini")
