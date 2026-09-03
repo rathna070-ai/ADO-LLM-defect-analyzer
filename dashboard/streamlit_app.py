@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+import pandas as pd
 import streamlit as st
 
 from ado_defect_analysis.config import Config
@@ -30,18 +31,57 @@ if df.empty:
     )
     st.stop()
 
-aggregates = build_aggregates(df)
+aggregates = build_aggregates(df, config.rejected_resolutions)
 
 col1, col2, col3 = st.columns(3)
 col1.metric("Total defects", aggregates["total_defects"])
 col2.metric("Testing-gap rate", f"{aggregates['testing_gap_rate']:.0%}")
-col3.metric("Modules affected", len(aggregates["module_density"]))
+col3.metric("Areas affected", len(aggregates["module_density"]))
 
 st.subheader("Root cause distribution")
 st.bar_chart(aggregates["root_cause_distribution"])
 
-st.subheader("Defect density by module")
+st.subheader("Defects by area path")
 st.bar_chart(aggregates["module_density"])
+
+st.subheader("Defects by area path × iteration path")
+area_options = ["All"] + sorted(aggregates["area_iteration_distribution"].keys())
+selected_area = st.selectbox("Area path", area_options)
+iteration_df = df if selected_area == "All" else df[df["module"] == selected_area]
+iteration_pivot = iteration_df.pivot_table(
+    index="module", columns="iteration_path", values="id", aggfunc="count", fill_value=0
+)
+st.bar_chart(iteration_pivot)
+st.dataframe(iteration_pivot, use_container_width=True)
+
+st.subheader("Root cause — major contributor by area path")
+contributor_rows = [
+    {
+        "RCA category": category,
+        "Top area path": info["area_path"],
+        "Count": info["count"],
+        "% of category": f"{info['pct_of_category']:.0%}",
+    }
+    for category, info in aggregates["rca_major_contributor"].items()
+]
+contributor_df = pd.DataFrame(contributor_rows).sort_values("Count", ascending=False)
+st.dataframe(contributor_df, use_container_width=True, hide_index=True)
+st.bar_chart(contributor_df.set_index("RCA category")["Count"])
+
+st.subheader("Valid vs rejected defects")
+valid_vs_rejected = aggregates["valid_vs_rejected"]
+total_resolved = valid_vs_rejected["valid"] + valid_vs_rejected["rejected"]
+rejection_rate = valid_vs_rejected["rejected"] / total_resolved if total_resolved else 0.0
+vcol1, vcol2, vcol3 = st.columns(3)
+vcol1.metric("Valid", valid_vs_rejected["valid"])
+vcol2.metric("Rejected", valid_vs_rejected["rejected"])
+vcol3.metric("Rejection rate", f"{rejection_rate:.0%}")
+st.bar_chart(pd.Series(valid_vs_rejected, name="count"))
+
+st.subheader("Root cause vs SDLC phase")
+sdlc_df = pd.DataFrame(aggregates["rca_sdlc_crosstab"]).fillna(0).T
+st.bar_chart(sdlc_df)
+st.dataframe(sdlc_df, use_container_width=True)
 
 st.subheader("Monthly trend")
 st.line_chart(aggregates["monthly_trend"])

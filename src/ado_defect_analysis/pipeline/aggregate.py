@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from ..config import Config
+from ..config import DEFAULT_REJECTED_RESOLUTIONS, Config
 from ..storage import DefectStore
 
 
@@ -25,7 +25,7 @@ def load_categorized_dataframe(config: Config) -> pd.DataFrame:
     return df
 
 
-def build_aggregates(df: pd.DataFrame) -> dict:
+def build_aggregates(df: pd.DataFrame, rejected_resolutions: list[str] | None = None) -> dict:
     if df.empty:
         return {
             "total_defects": 0,
@@ -33,7 +33,14 @@ def build_aggregates(df: pd.DataFrame) -> dict:
             "module_density": {},
             "monthly_trend": {},
             "testing_gap_rate": 0.0,
+            "area_iteration_distribution": {},
+            "rca_major_contributor": {},
+            "valid_vs_rejected": {"valid": 0, "rejected": 0},
+            "rca_sdlc_crosstab": {},
         }
+
+    rejected_resolutions = rejected_resolutions or DEFAULT_REJECTED_RESOLUTIONS
+    rejected_lower = {r.strip().lower() for r in rejected_resolutions}
 
     root_cause_distribution = {
         str(k): int(v) for k, v in df["root_cause_category"].value_counts().items()
@@ -44,10 +51,42 @@ def build_aggregates(df: pd.DataFrame) -> dict:
     }
     testing_gap_rate = float(df["testing_gap_flag"].astype(bool).mean())
 
+    area_iteration_distribution: dict[str, dict[str, int]] = {}
+    for (area_path, iteration_path), count in df.groupby(["module", "iteration_path"]).size().items():
+        area_iteration_distribution.setdefault(str(area_path), {})[str(iteration_path)] = int(count)
+
+    rca_major_contributor: dict[str, dict] = {}
+    category_totals = df["root_cause_category"].value_counts()
+    by_category_module = df.groupby(["root_cause_category", "module"]).size()
+    for category in category_totals.index:
+        top_module, top_count = by_category_module[category].idxmax(), by_category_module[category].max()
+        total = int(category_totals[category])
+        rca_major_contributor[str(category)] = {
+            "area_path": str(top_module),
+            "count": int(top_count),
+            "pct_of_category": round(float(top_count) / total, 4) if total else 0.0,
+        }
+
+    is_rejected = df["resolution"].fillna("").str.strip().str.lower().isin(rejected_lower)
+    valid_vs_rejected = {
+        "valid": int((~is_rejected).sum()),
+        "rejected": int(is_rejected.sum()),
+    }
+
+    rca_sdlc_crosstab: dict[str, dict[str, int]] = {}
+    if "sdlc_phase" in df.columns:
+        crosstab = pd.crosstab(df["root_cause_category"], df["sdlc_phase"])
+        for category, row in crosstab.iterrows():
+            rca_sdlc_crosstab[str(category)] = {str(k): int(v) for k, v in row.items()}
+
     return {
         "total_defects": int(len(df)),
         "root_cause_distribution": root_cause_distribution,
         "module_density": module_density,
         "monthly_trend": monthly_trend,
         "testing_gap_rate": round(testing_gap_rate, 4),
+        "area_iteration_distribution": area_iteration_distribution,
+        "rca_major_contributor": rca_major_contributor,
+        "valid_vs_rejected": valid_vs_rejected,
+        "rca_sdlc_crosstab": rca_sdlc_crosstab,
     }

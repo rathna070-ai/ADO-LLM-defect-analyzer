@@ -21,9 +21,11 @@ def test_parse_excel_with_ado_display_headers(tmp_path: Path):
                 "Title": "Checkout button does nothing",
                 "Description": "<div>Clicking <b>Pay</b> does nothing.</div>",
                 "Area Path": "App\\Checkout",
+                "Iteration Path": "App\\Sprint 12",
                 "Severity": "1 - Critical",
                 "State": "Closed",
-                "Resolved Reason": "Fixed event binding.",
+                "Resolution": "Fixed",
+                "History": "Fixed event binding.",
                 "Root Cause": "Code defect",
                 "Created Date": "2026-01-01",
                 "Closed Date": "2026-01-05",
@@ -41,6 +43,9 @@ def test_parse_excel_with_ado_display_headers(tmp_path: Path):
     assert d.title == "Checkout button does nothing"
     assert d.description == "Clicking Pay does nothing."
     assert d.module == "App\\Checkout"
+    assert d.iteration_path == "App\\Sprint 12"
+    assert d.resolution == "Fixed"
+    assert d.resolution_notes == "Fixed event binding."
     assert d.tags == "regression; payments"
     assert d.comments == "QA repro'd on staging. Fix verified."
 

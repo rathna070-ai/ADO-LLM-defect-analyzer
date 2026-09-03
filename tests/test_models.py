@@ -1,4 +1,4 @@
-from ado_defect_analysis.models import Defect
+from ado_defect_analysis.models import Defect, DefectCategorization
 
 
 def test_from_work_item_strips_html_and_maps_fields():
@@ -8,11 +8,12 @@ def test_from_work_item_strips_html_and_maps_fields():
             "System.Title": "Checkout button does nothing",
             "System.Description": "<div>Clicking <b>Pay</b> does nothing.</div>",
             "System.AreaPath": "App\\Checkout",
+            "System.IterationPath": "App\\Sprint 12",
             "System.State": "Closed",
             "System.CreatedDate": "2026-01-01T00:00:00Z",
             "Microsoft.VSTS.Common.Severity": "1 - Critical",
             "Microsoft.VSTS.Common.ClosedDate": "2026-01-05T00:00:00Z",
-            "Microsoft.VSTS.Common.ResolvedReason": "Fixed event handler binding.",
+            "Microsoft.VSTS.Common.ResolvedReason": "Fixed",
             "Microsoft.VSTS.CMMI.RootCause": "Code defect",
             "System.Tags": "regression; payments",
         },
@@ -25,20 +26,45 @@ def test_from_work_item_strips_html_and_maps_fields():
     assert defect.id == 42
     assert defect.description == "Clicking Pay does nothing."
     assert defect.module == "App\\Checkout"
+    assert defect.iteration_path == "App\\Sprint 12"
+    assert defect.resolution == "Fixed"
     assert defect.root_cause_raw == "Code defect"
     assert defect.tags == "regression; payments"
     assert defect.comments == "QA repro'd on staging."
 
 
-def test_from_work_item_falls_back_to_history_when_no_resolved_reason():
+def test_from_work_item_resolution_notes_come_from_history():
     item = {
         "id": 7,
         "fields": {
             "System.Title": "Bug",
             "System.History": "Root cause was a race condition.",
+            "Microsoft.VSTS.Common.ResolvedReason": "Fixed",
         },
     }
 
     defect = Defect.from_work_item(item, root_cause_field="Microsoft.VSTS.CMMI.RootCause")
 
     assert defect.resolution_notes == "Root cause was a race condition."
+    assert defect.resolution == "Fixed"
+
+
+def test_from_work_item_defaults_iteration_and_resolution_when_absent():
+    item = {"id": 8, "fields": {"System.Title": "Bug"}}
+
+    defect = Defect.from_work_item(item, root_cause_field="Microsoft.VSTS.CMMI.RootCause")
+
+    assert defect.iteration_path == ""
+    assert defect.resolution == ""
+
+
+def test_defect_categorization_defaults_sdlc_phase_to_unknown():
+    categorization = DefectCategorization(
+        defect_id=1,
+        root_cause_category="code_defect",
+        testing_gap_flag=False,
+        summary="stub",
+        confidence=0.5,
+    )
+
+    assert categorization.sdlc_phase == "unknown"

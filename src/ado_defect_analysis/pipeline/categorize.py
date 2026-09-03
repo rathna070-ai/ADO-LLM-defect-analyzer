@@ -30,16 +30,27 @@ _SCHEMA = json.loads((_SCHEMAS_DIR / "categorize_defect.schema.json").read_text(
 _VALID_CATEGORIES = set(
     _SCHEMA["properties"]["results"]["items"]["properties"]["root_cause_category"]["enum"]
 )
+_VALID_SDLC_PHASES = set(
+    _SCHEMA["properties"]["results"]["items"]["properties"]["sdlc_phase"]["enum"]
+)
 
 
-def run_categorize(config: Config, provider: LlmProvider | None = None) -> int:
-    """Returns the number of defects newly categorized."""
+def run_categorize(
+    config: Config, provider: LlmProvider | None = None, recategorize_all: bool = False
+) -> int:
+    """Returns the number of defects categorized.
+
+    `recategorize_all` re-runs every defect in the DB rather than only
+    uncategorized ones — use it to backfill a newly added categorization field
+    (e.g. `sdlc_phase`) onto defects categorized before the field existed.
+    `save_categorizations` upserts by defect id, so this is safe to re-run.
+    """
     store = DefectStore(config.db_path)
     provider = provider or get_llm_provider(config.llm)
 
-    pending = store.get_uncategorized_defects()
+    pending = store.get_all_defects() if recategorize_all else store.get_uncategorized_defects()
     if not pending:
-        logger.info("No uncategorized defects found.")
+        logger.info("No defects to categorize." if recategorize_all else "No uncategorized defects found.")
         return 0
 
     batch_size = config.llm.categorize_batch_size
@@ -70,7 +81,10 @@ def _categorize_batch(
                     "description": d.description[:2000],
                     "module": d.module,
                     "severity": d.severity,
+                    "state": d.state,
+                    "disposition": d.resolution,
                     "resolution_notes": d.resolution_notes[:2000],
+                    "root_cause_raw": d.root_cause_raw,
                     "tags": d.tags,
                     "comments": d.comments[:2000],
                 }
@@ -103,6 +117,14 @@ def _categorize_batch(
                 defect_id,
             )
             category = "unknown"
+        sdlc_phase = entry.get("sdlc_phase")
+        if sdlc_phase not in _VALID_SDLC_PHASES:
+            logger.warning(
+                "LLM returned invalid sdlc_phase %r for defect %s; using 'unknown'.",
+                sdlc_phase,
+                defect_id,
+            )
+            sdlc_phase = "unknown"
         categorizations.append(
             DefectCategorization(
                 defect_id=defect_id,
@@ -110,6 +132,7 @@ def _categorize_batch(
                 testing_gap_flag=bool(entry.get("testing_gap_flag", False)),
                 summary=entry.get("summary", ""),
                 confidence=float(entry.get("confidence", 0.0)),
+                sdlc_phase=sdlc_phase,
             )
         )
 

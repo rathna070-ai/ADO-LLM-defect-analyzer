@@ -37,7 +37,18 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    subparsers.add_parser("categorize", help="Send uncategorized defects to the LLM.")
+    categorize_parser = subparsers.add_parser(
+        "categorize", help="Send uncategorized defects to the LLM."
+    )
+    categorize_parser.add_argument(
+        "--recategorize-all",
+        action="store_true",
+        help=(
+            "Re-run categorization for every defect in the DB, not just uncategorized "
+            "ones. Use this to backfill a newly added categorization field (e.g. "
+            "sdlc_phase) onto defects categorized before the field existed."
+        ),
+    )
     subparsers.add_parser("report", help="Generate the exec-tone narrative summary.")
     subparsers.add_parser("export", help="Export categorized defects to CSV/Excel.")
 
@@ -67,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"Fetched {count} defects.")
     elif args.command == "categorize":
-        count = run_categorize(config)
+        count = run_categorize(config, recategorize_all=args.recategorize_all)
         print(f"Categorized {count} defects.")
     elif args.command == "report":
         narrative = run_report(config)

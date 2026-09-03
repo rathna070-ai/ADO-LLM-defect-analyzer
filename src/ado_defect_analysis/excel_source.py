@@ -30,15 +30,17 @@ _COLUMN_SYNONYMS: dict[str, list[str]] = {
     "title": ["Title", "System.Title"],
     "description": ["Description", "System.Description"],
     "module": ["Area Path", "System.AreaPath", "Module"],
+    "iteration_path": ["Iteration Path", "System.IterationPath", "Sprint"],
     "severity": ["Severity", "Microsoft.VSTS.Common.Severity"],
     "state": ["State", "System.State"],
-    "resolution_notes": [
+    "resolution": [
+        "Resolution",
         "Resolved Reason",
         "Microsoft.VSTS.Common.ResolvedReason",
-        "Resolution",
-        "History",
-        "System.History",
+        "Reason",
+        "System.Reason",
     ],
+    "resolution_notes": ["History", "System.History", "Resolution Notes"],
     "root_cause_raw": ["Root Cause", "Microsoft.VSTS.CMMI.RootCause"],
     "created_date": ["Created Date", "System.CreatedDate"],
     "closed_date": ["Closed Date", "Microsoft.VSTS.Common.ClosedDate"],
@@ -94,6 +96,8 @@ def parse_excel(file_path: Path, column_map: Optional[dict[str, list[str]]] = No
                 closed_date=_cell(row, resolved, "closed_date") or None,
                 tags=_cell(row, resolved, "tags"),
                 comments=strip_html(_cell(row, resolved, "comments")),
+                iteration_path=_cell(row, resolved, "iteration_path"),
+                resolution=_cell(row, resolved, "resolution"),
             )
         )
     return defects

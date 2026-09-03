@@ -13,6 +13,15 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
+DEFAULT_REJECTED_RESOLUTIONS = [
+    "Duplicate",
+    "Cannot Reproduce",
+    "As Designed",
+    "By Design",
+    "Won't Fix",
+    "Not a Bug",
+]
+
 
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name)
@@ -64,6 +73,7 @@ class Config:
     llm: LlmConfig = field(default_factory=LlmConfig)
     db_path: Path = PROJECT_ROOT / "data" / "defects.db"
     output_dir: Path = PROJECT_ROOT / "data" / "exports"
+    rejected_resolutions: list[str] = field(default_factory=lambda: list(DEFAULT_REJECTED_RESOLUTIONS))
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -103,4 +113,11 @@ class Config:
         )
         db_path = Path(os.environ.get("DEFECT_DB_PATH", str(cls.db_path)))
         output_dir = Path(os.environ.get("DEFECT_OUTPUT_DIR", str(cls.output_dir)))
-        return cls(ado=ado, llm=llm, db_path=db_path, output_dir=output_dir)
+        rejected_resolutions = _env_list("REJECTED_RESOLUTIONS", list(DEFAULT_REJECTED_RESOLUTIONS))
+        return cls(
+            ado=ado,
+            llm=llm,
+            db_path=db_path,
+            output_dir=output_dir,
+            rejected_resolutions=rejected_resolutions,
+        )

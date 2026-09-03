@@ -22,6 +22,7 @@ _DEFAULT_FIELDS = [
     "System.Title",
     "System.Description",
     "System.AreaPath",
+    "System.IterationPath",
     "System.State",
     "System.CreatedDate",
     "System.History",

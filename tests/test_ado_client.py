@@ -30,6 +30,7 @@ def test_fetch_closed_defects_maps_tags_without_fetching_comments():
                     "fields": {
                         "System.Title": "Bug",
                         "System.Tags": "regression; payments",
+                        "System.IterationPath": "App\\Sprint 12",
                     },
                 }
             ]
@@ -43,8 +44,35 @@ def test_fetch_closed_defects_maps_tags_without_fetching_comments():
     assert len(defects) == 1
     assert defects[0].tags == "regression; payments"
     assert defects[0].comments == ""
+    assert defects[0].iteration_path == "App\\Sprint 12"
     # No comments endpoint should have been called since fetch_comments is off by default.
     assert all("/comments" not in call.request.url for call in responses.calls)
+
+
+@responses.activate
+def test_fetch_closed_defects_requests_iteration_path_field():
+    responses.add(
+        responses.POST,
+        f"{_BASE}/wit/wiql",
+        json={"workItems": [{"id": 1}]},
+        status=200,
+    )
+
+    def _capture_fields(request):
+        import json
+
+        body = json.loads(request.body)
+        assert "System.IterationPath" in body["fields"]
+        return (200, {}, json.dumps({"value": []}))
+
+    responses.add_callback(
+        responses.POST,
+        f"{_BASE}/wit/workitemsbatch",
+        callback=_capture_fields,
+        content_type="application/json",
+    )
+
+    AdoClient(_config()).fetch_closed_defects()
 
 
 @responses.activate

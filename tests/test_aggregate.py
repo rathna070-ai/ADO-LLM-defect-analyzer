@@ -8,35 +8,51 @@ def test_build_aggregates_empty_dataframe():
 
     assert result["total_defects"] == 0
     assert result["testing_gap_rate"] == 0.0
+    assert result["area_iteration_distribution"] == {}
+    assert result["rca_major_contributor"] == {}
+    assert result["valid_vs_rejected"] == {"valid": 0, "rejected": 0}
+    assert result["rca_sdlc_crosstab"] == {}
 
 
-def test_build_aggregates_computes_distributions():
+def _sample_df() -> pd.DataFrame:
     df = pd.DataFrame(
         [
             {
                 "module": "Checkout",
+                "iteration_path": "Sprint 1",
                 "root_cause_category": "code_defect",
+                "sdlc_phase": "development",
                 "testing_gap_flag": 1,
+                "resolution": "Fixed",
                 "closed_date": "2026-01-05",
             },
             {
                 "module": "Checkout",
+                "iteration_path": "Sprint 2",
                 "root_cause_category": "testing_gap",
+                "sdlc_phase": "testing",
                 "testing_gap_flag": 1,
+                "resolution": "Duplicate",
                 "closed_date": "2026-01-20",
             },
             {
                 "module": "Search",
+                "iteration_path": "Sprint 1",
                 "root_cause_category": "code_defect",
+                "sdlc_phase": "development",
                 "testing_gap_flag": 0,
+                "resolution": "Fixed",
                 "closed_date": "2026-02-01",
             },
         ]
     )
     df["closed_date"] = pd.to_datetime(df["closed_date"])
     df["closed_month"] = df["closed_date"].dt.to_period("M").astype(str)
+    return df
 
-    result = build_aggregates(df)
+
+def test_build_aggregates_computes_distributions():
+    result = build_aggregates(_sample_df())
 
     assert result["total_defects"] == 3
     assert result["root_cause_distribution"]["code_defect"] == 2
@@ -44,3 +60,33 @@ def test_build_aggregates_computes_distributions():
     assert result["monthly_trend"]["2026-01"] == 2
     assert round(result["testing_gap_rate"], 2) == 0.67
     assert isinstance(result["root_cause_distribution"]["code_defect"], int)
+
+
+def test_build_aggregates_area_iteration_distribution():
+    result = build_aggregates(_sample_df())
+
+    assert result["area_iteration_distribution"]["Checkout"]["Sprint 1"] == 1
+    assert result["area_iteration_distribution"]["Checkout"]["Sprint 2"] == 1
+    assert result["area_iteration_distribution"]["Search"]["Sprint 1"] == 1
+
+
+def test_build_aggregates_rca_major_contributor():
+    result = build_aggregates(_sample_df())
+
+    top = result["rca_major_contributor"]["code_defect"]
+    assert top["area_path"] in {"Checkout", "Search"}
+    assert top["count"] == 1
+    assert top["pct_of_category"] == 0.5
+
+
+def test_build_aggregates_valid_vs_rejected_uses_rejected_resolutions():
+    result = build_aggregates(_sample_df(), rejected_resolutions=["Duplicate"])
+
+    assert result["valid_vs_rejected"] == {"valid": 2, "rejected": 1}
+
+
+def test_build_aggregates_rca_sdlc_crosstab():
+    result = build_aggregates(_sample_df())
+
+    assert result["rca_sdlc_crosstab"]["code_defect"]["development"] == 2
+    assert result["rca_sdlc_crosstab"]["testing_gap"]["testing"] == 1

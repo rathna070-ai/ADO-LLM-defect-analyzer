@@ -27,6 +27,19 @@
             "type": "boolean",
             "description": "true if better test coverage would plausibly have caught this before release."
           },
+          "sdlc_phase": {
+            "type": "string",
+            "enum": [
+              "requirements",
+              "design",
+              "development",
+              "testing",
+              "deployment_release",
+              "environment_production",
+              "unknown"
+            ],
+            "description": "The SDLC phase where this defect's root cause was introduced or should have been caught."
+          },
           "summary": {
             "type": "string",
             "description": "One sentence, plain English, no jargon."
@@ -41,6 +54,7 @@
           "defect_id",
           "root_cause_category",
           "testing_gap_flag",
+          "sdlc_phase",
           "summary",
           "confidence"
         ]

@@ -23,6 +23,8 @@ class Defect:
     closed_date: Optional[str]
     tags: str = ""
     comments: str = ""
+    iteration_path: str = ""
+    resolution: str = ""
 
     @classmethod
     def from_work_item(
@@ -36,15 +38,14 @@ class Defect:
             module=fields.get("System.AreaPath", ""),
             severity=fields.get("Microsoft.VSTS.Common.Severity", ""),
             state=fields.get("System.State", ""),
-            resolution_notes=strip_html(
-                fields.get("Microsoft.VSTS.Common.ResolvedReason", "")
-                or fields.get("System.History", "")
-            ),
+            resolution_notes=strip_html(fields.get("System.History", "")),
             root_cause_raw=fields.get(root_cause_field, ""),
             created_date=fields.get("System.CreatedDate", ""),
             closed_date=fields.get("Microsoft.VSTS.Common.ClosedDate"),
             tags=fields.get("System.Tags", ""),
             comments=comments,
+            iteration_path=fields.get("System.IterationPath", ""),
+            resolution=fields.get("Microsoft.VSTS.Common.ResolvedReason", ""),
         )
 
 
@@ -57,6 +58,7 @@ class DefectCategorization:
     testing_gap_flag: bool
     summary: str
     confidence: float
+    sdlc_phase: str = "unknown"
 
 
 def strip_html(value: str) -> str:

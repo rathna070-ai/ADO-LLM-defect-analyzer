@@ -28,7 +28,9 @@ CREATE TABLE IF NOT EXISTS defects (
     created_date TEXT,
     closed_date TEXT,
     tags TEXT,
-    comments TEXT
+    comments TEXT,
+    iteration_path TEXT,
+    resolution TEXT
 );
 
 CREATE TABLE IF NOT EXISTS categorizations (
@@ -36,9 +38,22 @@ CREATE TABLE IF NOT EXISTS categorizations (
     root_cause_category TEXT NOT NULL,
     testing_gap_flag INTEGER NOT NULL,
     summary TEXT NOT NULL,
-    confidence REAL NOT NULL
+    confidence REAL NOT NULL,
+    sdlc_phase TEXT
 );
 """
+
+# Columns added after the initial schema — kept here so an existing defects.db
+# upgrades in place instead of erroring on the new column names.
+_MIGRATIONS = {
+    "defects": [
+        ("iteration_path", "TEXT"),
+        ("resolution", "TEXT"),
+    ],
+    "categorizations": [
+        ("sdlc_phase", "TEXT"),
+    ],
+}
 
 
 class DefectStore:
@@ -47,6 +62,15 @@ class DefectStore:
         self._db_path = db_path
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            self._migrate(conn)
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        for table, columns in _MIGRATIONS.items():
+            existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+            for column, sql_type in columns:
+                if column not in existing:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -65,8 +89,8 @@ class DefectStore:
                 INSERT INTO defects
                     (id, title, description, module, severity, state,
                      resolution_notes, root_cause_raw, created_date, closed_date,
-                     tags, comments)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     tags, comments, iteration_path, resolution)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     title=excluded.title,
                     description=excluded.description,
@@ -78,7 +102,9 @@ class DefectStore:
                     created_date=excluded.created_date,
                     closed_date=excluded.closed_date,
                     tags=excluded.tags,
-                    comments=excluded.comments
+                    comments=excluded.comments,
+                    iteration_path=excluded.iteration_path,
+                    resolution=excluded.resolution
                 """,
                 [
                     (
@@ -94,6 +120,8 @@ class DefectStore:
                         d.closed_date,
                         d.tags,
                         d.comments,
+                        d.iteration_path,
+                        d.resolution,
                     )
                     for d in defects
                 ],
@@ -110,21 +138,35 @@ class DefectStore:
             ).fetchall()
         return [_row_to_defect(row) for row in rows]
 
+    def get_all_defects(self) -> list[Defect]:
+        """All defects regardless of categorization status — used to force a full re-categorize."""
+        with self._connect() as conn:
+            rows = conn.execute("SELECT * FROM defects").fetchall()
+        return [_row_to_defect(row) for row in rows]
+
     def save_categorizations(self, categorizations: list[DefectCategorization]) -> None:
         with self._connect() as conn:
             conn.executemany(
                 """
                 INSERT INTO categorizations
-                    (defect_id, root_cause_category, testing_gap_flag, summary, confidence)
-                VALUES (?, ?, ?, ?, ?)
+                    (defect_id, root_cause_category, testing_gap_flag, summary, confidence, sdlc_phase)
+                VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(defect_id) DO UPDATE SET
                     root_cause_category=excluded.root_cause_category,
                     testing_gap_flag=excluded.testing_gap_flag,
                     summary=excluded.summary,
-                    confidence=excluded.confidence
+                    confidence=excluded.confidence,
+                    sdlc_phase=excluded.sdlc_phase
                 """,
                 [
-                    (c.defect_id, c.root_cause_category, int(c.testing_gap_flag), c.summary, c.confidence)
+                    (
+                        c.defect_id,
+                        c.root_cause_category,
+                        int(c.testing_gap_flag),
+                        c.summary,
+                        c.confidence,
+                        c.sdlc_phase,
+                    )
                     for c in categorizations
                 ],
             )
@@ -134,7 +176,8 @@ class DefectStore:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT d.*, c.root_cause_category, c.testing_gap_flag, c.summary, c.confidence
+                SELECT d.*, c.root_cause_category, c.testing_gap_flag, c.summary, c.confidence,
+                       c.sdlc_phase
                 FROM defects d
                 JOIN categorizations c ON c.defect_id = d.id
                 """
@@ -156,4 +199,6 @@ def _row_to_defect(row: sqlite3.Row) -> Defect:
         closed_date=row["closed_date"],
         tags=row["tags"] or "",
         comments=row["comments"] or "",
+        iteration_path=row["iteration_path"] or "",
+        resolution=row["resolution"] or "",
     )
