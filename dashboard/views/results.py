@@ -36,7 +36,10 @@ def render(config: Config) -> None:
         return
 
     aggregates = build_aggregates(
-        df, config.rejected_resolutions, config.review_confidence_threshold
+        df,
+        config.rejected_resolutions,
+        config.review_confidence_threshold,
+        config.borderline_resolutions,
     )
 
     col1, col2, col3, col4 = st.columns(4)
@@ -81,12 +84,27 @@ def render(config: Config) -> None:
 
     st.subheader("Valid vs rejected defects")
     split = aggregates["valid_vs_rejected"]
-    resolved = split["valid"] + split["rejected"]
-    vcol1, vcol2, vcol3 = st.columns(3)
+    logged = sum(split.values())
+    rate = split["rejected"] / logged if logged else 0
+    vcol1, vcol2, vcol3, vcol4 = st.columns(4)
     vcol1.metric("Valid", split["valid"])
     vcol2.metric("Rejected", split["rejected"])
-    vcol3.metric("Rejection rate", f"{(split['rejected'] / resolved if resolved else 0):.0%}")
+    vcol3.metric("Borderline", split.get("borderline", 0))
+    vcol4.metric("Rejection rate", f"{rate:.0%}", help="Share of total logged.")
+    st.caption(
+        "Borderline (Cannot Reproduce, Not a Bug, Invalid, Deferred) is held separate "
+        "rather than folded into either count — it is a different claim from "
+        "'working as designed'. Industry-healthy rejection rates sit around 10–20% of "
+        "logged defects; sustained rates above ~25–30% usually point at requirements "
+        "or test-case design rather than product quality."
+    )
     st.bar_chart(pd.Series(split, name="count"))
+    if aggregates.get("rejection_breakdown"):
+        st.caption("Rejected and borderline, by recorded reason:")
+        st.dataframe(
+            pd.Series(aggregates["rejection_breakdown"], name="count").rename_axis("reason"),
+            width="stretch",
+        )
 
     st.subheader("Root cause vs SDLC phase")
     sdlc = pd.DataFrame(aggregates["rca_sdlc_crosstab"]).fillna(0).T

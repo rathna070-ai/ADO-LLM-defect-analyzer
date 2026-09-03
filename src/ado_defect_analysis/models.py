@@ -26,6 +26,18 @@ class Defect:
     comments: str = ""
     iteration_path: str = ""
     resolution: str = ""
+    # Fields common in customized ADO bug templates. Captured because they
+    # carry RCA signal the model would otherwise have to guess at: the team's
+    # own SDLC phase, and where the defect was introduced vs found (which is
+    # what makes leakage measurable).
+    sdlc_phase_raw: str = ""
+    environment: str = ""
+    found_in_environment: str = ""
+    introduced_in_month: str = ""
+    introduced_in_year: str = ""
+    user_impact: str = ""
+    parent: str = ""
+    work_item_type: str = ""
 
     @classmethod
     def from_work_item(

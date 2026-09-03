@@ -30,10 +30,22 @@ answer out of whatever fields are present — not to wait for perfect data.
 - `third_party_defect` — an external vendor, library, or service caused it.
 - `performance_defect` — latency, timeout, resource exhaustion, scalability.
 - `security_defect` — vulnerability, or an authentication/authorisation flaw.
+  Flag these clearly; in a regulated domain they need explicit visibility.
+- `documentation_defect` — incorrect or missing documentation drove the wrong
+  behaviour.
+- `process_communication_defect` — a hand-off, coordination, or process
+  breakdown between teams, rather than a purely technical fault or a
+  requirements gap. Maps the CMMI "Communication Error" value.
 - `not_a_defect` — duplicate, working as designed, cannot reproduce, user
   error, or an invalid report. Use this instead of `unknown` whenever the
   work item was closed as not-a-real-defect.
 - `unknown` — genuinely nothing to go on. See the strict bar below.
+
+If the team's own `root_cause_raw` uses the native ADO CMMI picklist, map it
+straight across: "Coding Error" → `coding_error`, "Design Error" →
+`design_flaw`, "Specification Error" → `requirements_gap`, "Communication
+Error" → `process_communication_defect`, "Unknown" → judge from the other
+fields rather than copying the blank verdict.
 
 ## SDLC phase
 
@@ -70,6 +82,20 @@ than reading any one in isolation. In order of authority:
    - Feature or module names (module names) are context, not cause.
 6. **`title`** — always present, and usually more diagnostic than people
    assume. Read it as a symptom statement and reason to the most likely cause.
+
+Two further fields, when the export carries them:
+
+- **`sdlc_phase_raw`** — the team's own SDLC value. When present and it maps
+  cleanly onto the phase list, use it rather than inferring, and say
+  "sdlc_phase_raw" in `evidence`.
+- **`environment` / `found_in_environment`** — where the defect was found
+  (SIT, UAT, PROD). These tell you where it *escaped to*, which informs the
+  phase and the testing-gap judgment, not the root cause itself. A defect
+  found in PROD that should have been caught earlier is a strong
+  `testing_gap_flag` signal.
+- **`user_impact`** — business impact, which is not the same as `severity`.
+  Treat a high user impact with a low severity as a mis-rating worth noting in
+  the summary, not as evidence about the cause.
 
 ## When description and resolution notes are blank
 

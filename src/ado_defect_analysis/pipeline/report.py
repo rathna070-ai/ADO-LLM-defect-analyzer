@@ -32,7 +32,10 @@ def run_report(
     """
     df = filter_by_closed_date(load_categorized_dataframe(config), since, until)
     aggregates = build_aggregates(
-        df, config.rejected_resolutions, config.review_confidence_threshold
+        df,
+        config.rejected_resolutions,
+        config.review_confidence_threshold,
+        config.borderline_resolutions,
     )
 
     if aggregates["total_defects"] == 0:

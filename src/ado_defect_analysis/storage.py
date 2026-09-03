@@ -30,7 +30,15 @@ CREATE TABLE IF NOT EXISTS defects (
     tags TEXT,
     comments TEXT,
     iteration_path TEXT,
-    resolution TEXT
+    resolution TEXT,
+    sdlc_phase_raw TEXT,
+    environment TEXT,
+    found_in_environment TEXT,
+    introduced_in_month TEXT,
+    introduced_in_year TEXT,
+    user_impact TEXT,
+    parent TEXT,
+    work_item_type TEXT
 );
 
 CREATE TABLE IF NOT EXISTS categorizations (
@@ -54,6 +62,14 @@ _MIGRATIONS = {
     "defects": [
         ("iteration_path", "TEXT"),
         ("resolution", "TEXT"),
+        ("sdlc_phase_raw", "TEXT"),
+        ("environment", "TEXT"),
+        ("found_in_environment", "TEXT"),
+        ("introduced_in_month", "TEXT"),
+        ("introduced_in_year", "TEXT"),
+        ("user_impact", "TEXT"),
+        ("parent", "TEXT"),
+        ("work_item_type", "TEXT"),
     ],
     "categorizations": [
         ("sdlc_phase", "TEXT"),
@@ -105,8 +121,11 @@ class DefectStore:
                 INSERT INTO defects
                     (id, title, description, module, severity, state,
                      resolution_notes, root_cause_raw, created_date, closed_date,
-                     tags, comments, iteration_path, resolution)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     tags, comments, iteration_path, resolution,
+                     sdlc_phase_raw, environment, found_in_environment,
+                     introduced_in_month, introduced_in_year, user_impact, parent,
+                     work_item_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     title=excluded.title,
                     description=excluded.description,
@@ -120,7 +139,15 @@ class DefectStore:
                     tags=excluded.tags,
                     comments=excluded.comments,
                     iteration_path=excluded.iteration_path,
-                    resolution=excluded.resolution
+                    resolution=excluded.resolution,
+                    sdlc_phase_raw=excluded.sdlc_phase_raw,
+                    environment=excluded.environment,
+                    found_in_environment=excluded.found_in_environment,
+                    introduced_in_month=excluded.introduced_in_month,
+                    introduced_in_year=excluded.introduced_in_year,
+                    user_impact=excluded.user_impact,
+                    parent=excluded.parent,
+                    work_item_type=excluded.work_item_type
                 """,
                 [
                     (
@@ -138,6 +165,14 @@ class DefectStore:
                         d.comments,
                         d.iteration_path,
                         d.resolution,
+                        d.sdlc_phase_raw,
+                        d.environment,
+                        d.found_in_environment,
+                        d.introduced_in_month,
+                        d.introduced_in_year,
+                        d.user_impact,
+                        d.parent,
+                        d.work_item_type,
                     )
                     for d in defects
                 ],
@@ -252,4 +287,12 @@ def _row_to_defect(row: sqlite3.Row) -> Defect:
         comments=row["comments"] or "",
         iteration_path=row["iteration_path"] or "",
         resolution=row["resolution"] or "",
+        sdlc_phase_raw=row["sdlc_phase_raw"] or "",
+        environment=row["environment"] or "",
+        found_in_environment=row["found_in_environment"] or "",
+        introduced_in_month=row["introduced_in_month"] or "",
+        introduced_in_year=row["introduced_in_year"] or "",
+        user_impact=row["user_impact"] or "",
+        parent=row["parent"] or "",
+        work_item_type=row["work_item_type"] or "",
     )

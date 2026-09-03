@@ -91,7 +91,7 @@ def test_run_report_honours_configured_rejected_resolutions(tmp_path: Path):
     run_report(config, provider=provider)
 
     aggregates = json.loads(provider.last_user_prompt)
-    assert aggregates["valid_vs_rejected"] == {"valid": 0, "rejected": 1}
+    assert aggregates["valid_vs_rejected"] == {"valid": 0, "rejected": 1, "borderline": 0}
 
 
 def test_run_report_returns_empty_when_nothing_categorized(tmp_path: Path):

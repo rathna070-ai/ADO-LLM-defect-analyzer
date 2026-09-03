@@ -10,7 +10,7 @@ def test_build_aggregates_empty_dataframe():
     assert result["testing_gap_rate"] == 0.0
     assert result["area_iteration_distribution"] == {}
     assert result["rca_major_contributor"] == {}
-    assert result["valid_vs_rejected"] == {"valid": 0, "rejected": 0}
+    assert result["valid_vs_rejected"] == {"valid": 0, "rejected": 0, "borderline": 0}
     assert result["rca_sdlc_crosstab"] == {}
 
 
@@ -110,7 +110,7 @@ def test_build_aggregates_rca_major_contributor():
 def test_build_aggregates_valid_vs_rejected_uses_rejected_resolutions():
     result = build_aggregates(_sample_df(), rejected_resolutions=["Duplicate"])
 
-    assert result["valid_vs_rejected"] == {"valid": 2, "rejected": 1}
+    assert result["valid_vs_rejected"] == {"valid": 2, "rejected": 1, "borderline": 0}
 
 
 def test_rejection_is_detected_from_state_when_resolution_is_blank():
@@ -122,7 +122,7 @@ def test_rejection_is_detected_from_state_when_resolution_is_blank():
 
     result = build_aggregates(df, rejected_resolutions=["Duplicate", "Rejected"])
 
-    assert result["valid_vs_rejected"] == {"valid": 2, "rejected": 1}
+    assert result["valid_vs_rejected"] == {"valid": 2, "rejected": 1, "borderline": 0}
 
 
 def test_a_defect_rejected_in_both_fields_is_counted_once():
@@ -132,7 +132,77 @@ def test_a_defect_rejected_in_both_fields_is_counted_once():
 
     result = build_aggregates(df, rejected_resolutions=["Duplicate", "Rejected"])
 
-    assert result["valid_vs_rejected"] == {"valid": 2, "rejected": 1}
+    assert result["valid_vs_rejected"] == {"valid": 2, "rejected": 1, "borderline": 0}
+
+
+def test_borderline_outcomes_are_held_separate_from_rejected():
+    """Cannot Reproduce is a different claim from Working as Designed —
+    folding them together misstates the rejection rate either way."""
+    df = _sample_df()
+    df["resolution"] = ["Fixed", "Duplicate", "Cannot Reproduce"]
+
+    result = build_aggregates(
+        df, rejected_resolutions=["Duplicate"], borderline_resolutions=["Cannot Reproduce"]
+    )
+
+    assert result["valid_vs_rejected"] == {"valid": 1, "rejected": 1, "borderline": 1}
+
+
+def test_a_specific_borderline_reason_beats_a_generic_rejected_state():
+    """Real ADO processes set state=Rejected on everything closed unfixed.
+    Reading state first would bury every borderline outcome inside it."""
+    df = _sample_df()
+    df["resolution"] = ["Fixed", "Duplicate", "Cannot Reproduce"]
+    df["state"] = ["Closed", "Rejected", "Rejected"]
+
+    result = build_aggregates(
+        df,
+        rejected_resolutions=["Duplicate", "Rejected"],
+        borderline_resolutions=["Cannot Reproduce"],
+    )
+
+    assert result["valid_vs_rejected"] == {"valid": 1, "rejected": 1, "borderline": 1}
+
+
+def test_rejected_wins_when_a_value_appears_in_both_lists():
+    df = _sample_df()
+    df["resolution"] = ["Fixed", "Duplicate", "Fixed"]
+    df["state"] = ["Closed", "Rejected", "Closed"]
+
+    result = build_aggregates(
+        df, rejected_resolutions=["Duplicate", "Rejected"], borderline_resolutions=["Duplicate"]
+    )
+
+    assert result["valid_vs_rejected"]["rejected"] == 1
+    assert result["valid_vs_rejected"]["borderline"] == 0
+
+
+def test_rejection_breakdown_names_the_recorded_reasons():
+    df = _sample_df()
+    df["resolution"] = ["Fixed", "Duplicate", "Cannot Reproduce"]
+
+    result = build_aggregates(
+        df, rejected_resolutions=["Duplicate"], borderline_resolutions=["Cannot Reproduce"]
+    )
+
+    assert result["rejection_breakdown"] == {"Duplicate": 1, "Cannot Reproduce": 1}
+
+
+def test_pareto_marks_the_vital_few():
+    df = pd.concat([_sample_df()] * 4, ignore_index=True)
+    df.loc[:5, "root_cause_category"] = "coding_error"
+
+    pareto = build_aggregates(df)["rca_pareto"]
+
+    assert next(row["category"] for row in pareto) == "coding_error"
+    assert pareto[0]["cumulative_pct"] >= pareto[0]["pct_of_total"]
+    assert pareto[0]["in_vital_few"] is True
+    # Cumulative share must end at 100%.
+    assert pareto[-1]["cumulative_pct"] == 1.0
+
+
+def test_pareto_is_empty_for_an_empty_frame():
+    assert build_aggregates(pd.DataFrame())["rca_pareto"] == []
 
 
 def test_build_aggregates_rca_sdlc_crosstab():

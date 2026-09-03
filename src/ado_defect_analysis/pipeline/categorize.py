@@ -214,6 +214,10 @@ def _defect_payload(defect: Defect) -> dict[str, object]:
         "disposition": defect.resolution,
         "resolution_notes": defect.resolution_notes[:2000],
         "root_cause_raw": defect.root_cause_raw,
+        "sdlc_phase_raw": defect.sdlc_phase_raw,
+        "environment": defect.environment,
+        "found_in_environment": defect.found_in_environment,
+        "user_impact": defect.user_impact,
         "tags": defect.tags,
         "comments": defect.comments[:2000],
     }

@@ -71,6 +71,43 @@ def test_parse_excel_with_raw_field_reference_headers(tmp_path: Path):
     assert defects[0].tags == "search"
 
 
+def test_parse_excel_reads_customized_prefixed_custom_columns(tmp_path: Path):
+    """Customized ADO bug templates prefix custom fields; a plain synonym
+    list would silently drop the team's own root cause and disposition."""
+    path = _write_excel(
+        tmp_path,
+        [
+            {
+                "ID": 303,
+                "Title": "Claim limit not applied",
+                "XX_Root Cause": "Coding Error",
+                "XX_Disposition": "Working as Designed",
+                "SDLC": "Development",
+                "Environment": "UAT",
+                "XX_Found in Environment": "SIT",
+                "XX_Introduced_In_Month": "March",
+                "XX_Introduced_In_Year": "2026",
+                "User Impact": "High",
+                "Parent": "12345",
+                "Work Item Type": "Bug",
+            }
+        ],
+    )
+
+    d = parse_excel(path)[0]
+
+    assert d.root_cause_raw == "Coding Error"
+    assert d.resolution == "Working as Designed"
+    assert d.sdlc_phase_raw == "Development"
+    assert d.environment == "UAT"
+    assert d.found_in_environment == "SIT"
+    assert d.introduced_in_month == "March"
+    assert d.introduced_in_year == "2026"
+    assert d.user_impact == "High"
+    assert d.parent == "12345"
+    assert d.work_item_type == "Bug"
+
+
 def test_parse_excel_supports_custom_column_map(tmp_path: Path):
     path = _write_excel(
         tmp_path,

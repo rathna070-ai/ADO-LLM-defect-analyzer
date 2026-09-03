@@ -20,9 +20,24 @@ DEFAULT_REJECTED_RESOLUTIONS = [
     "By Design",
     "Won't Fix",
     "Not a Bug",
+    "Working as Designed",
+    "Works as Designed",
     # Some processes record the rejection as a workflow state rather than a
     # resolution, so the same list is matched against both fields.
     "Rejected",
+]
+
+# Deliberately NOT folded into either bucket. "Cannot Reproduce" is not the
+# same claim as "Working as Designed": one says we failed to observe it, the
+# other says the behaviour is correct. Counting them as rejected overstates
+# the rejection rate; counting them as valid overstates real defects. They get
+# reported as their own line so the reader decides.
+DEFAULT_BORDERLINE_RESOLUTIONS = [
+    "Cannot Reproduce",
+    "Not Reproducible",
+    "Not a Bug",
+    "Invalid",
+    "Deferred",
 ]
 
 
@@ -118,6 +133,9 @@ class Config:
     rejected_resolutions: list[str] = field(
         default_factory=lambda: list(DEFAULT_REJECTED_RESOLUTIONS)
     )
+    borderline_resolutions: list[str] = field(
+        default_factory=lambda: list(DEFAULT_BORDERLINE_RESOLUTIONS)
+    )
     # Categorizations below this confidence are routed to the needs-review
     # export rather than being taken at face value.
     review_confidence_threshold: float = 0.6
@@ -170,11 +188,15 @@ class Config:
         db_path = _env_path("DEFECT_DB_PATH", cls.db_path)
         output_dir = _env_path("DEFECT_OUTPUT_DIR", cls.output_dir)
         rejected_resolutions = _env_list("REJECTED_RESOLUTIONS", list(DEFAULT_REJECTED_RESOLUTIONS))
+        borderline_resolutions = _env_list(
+            "BORDERLINE_RESOLUTIONS", list(DEFAULT_BORDERLINE_RESOLUTIONS)
+        )
         return cls(
             ado=ado,
             llm=llm,
             db_path=db_path,
             output_dir=output_dir,
             rejected_resolutions=rejected_resolutions,
+            borderline_resolutions=borderline_resolutions,
             review_confidence_threshold=float(os.environ.get("REVIEW_CONFIDENCE_THRESHOLD", "0.6")),
         )
