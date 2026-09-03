@@ -25,6 +25,7 @@ from .base import LlmProvider, LlmProviderError
 
 class CopilotProvider(LlmProvider):
     def __init__(self, api_key: str, model: str, timeout_seconds: int = 60):
+        super().__init__()
         self._api_key = api_key
         self._model = model
         self._timeout_seconds = timeout_seconds

@@ -39,6 +39,11 @@ def run_report(config: Config, provider: LlmProvider | None = None) -> dict:
         max_tokens=config.llm.max_tokens,
     )
 
+    logger.info(
+        "Report run used %s.",
+        provider.usage.summary(config.llm.cost_per_mtok_input, config.llm.cost_per_mtok_output),
+    )
+
     config.output_dir.mkdir(parents=True, exist_ok=True)
     report_path = config.output_dir / "narrative_summary.json"
     report_path.write_text(json.dumps(narrative, indent=2))

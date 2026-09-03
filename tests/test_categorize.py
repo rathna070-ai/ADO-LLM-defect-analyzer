@@ -13,6 +13,7 @@ from ado_defect_analysis.storage import DefectStore
 
 class FakeProvider(LlmProvider):
     def __init__(self, response: dict[str, Any] | None = None, fail_ids: set[int] | None = None):
+        super().__init__()
         self._response = response
         self._fail_ids = fail_ids or set()
         self.last_defects: list[dict[str, Any]] = []

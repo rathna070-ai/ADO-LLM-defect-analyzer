@@ -94,6 +94,11 @@ class LlmConfig:
     # values become "unknown" rather than losing the whole batch. Turn it on
     # to reject such a batch outright instead.
     strict_schema: bool = False
+    # Optional, for a cost estimate in the run summary. Left at 0 because
+    # hardcoding provider prices guarantees they go stale — set them to your
+    # model's current per-million-token rates if you want dollar figures.
+    cost_per_mtok_input: float = 0.0
+    cost_per_mtok_output: float = 0.0
 
 
 @dataclass
@@ -146,6 +151,8 @@ class Config:
             max_tokens=_env_int("LLM_MAX_TOKENS", 5120),
             reasoning_effort=os.environ.get("LLM_REASONING_EFFORT", "low"),
             strict_schema=os.environ.get("LLM_STRICT_SCHEMA", "false").lower() == "true",
+            cost_per_mtok_input=float(os.environ.get("LLM_COST_PER_MTOK_INPUT", "0")),
+            cost_per_mtok_output=float(os.environ.get("LLM_COST_PER_MTOK_OUTPUT", "0")),
             categorize_batch_size=_env_int("LLM_CATEGORIZE_BATCH_SIZE", 10),
         )
         db_path = _env_path("DEFECT_DB_PATH", cls.db_path)

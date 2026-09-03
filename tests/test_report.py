@@ -13,6 +13,7 @@ _NARRATIVE = {"headline": "Defects trending down", "top_root_causes": ["code_def
 
 class FakeProvider(LlmProvider):
     def __init__(self) -> None:
+        super().__init__()
         self.last_user_prompt = ""
 
     @property

@@ -26,6 +26,7 @@ class GroqProvider(LlmProvider):
         timeout_seconds: int = 60,
         reasoning_effort: str = "",
     ):
+        super().__init__()
         if not api_key:
             raise LlmProviderError(
                 "GROQ_API_KEY is not set. Add it to .env or export it before running the pipeline."
@@ -85,6 +86,7 @@ class GroqProvider(LlmProvider):
             )
 
         body = response.json()
+        self.usage.add(body.get("usage"))
         try:
             content = body["choices"][0]["message"]["content"]
         except (KeyError, IndexError) as exc:

@@ -100,6 +100,11 @@ def run_categorize(
             len(pending),
         )
 
+    logger.info(
+        "Categorize run used %s.",
+        provider.usage.summary(config.llm.cost_per_mtok_input, config.llm.cost_per_mtok_output),
+    )
+
     if failed_batches:
         logger.warning("%d batch(es) failed and were skipped.", failed_batches)
         # Nothing got through at all — surface that as a failure rather than
