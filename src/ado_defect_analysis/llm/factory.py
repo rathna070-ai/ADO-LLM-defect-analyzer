@@ -16,6 +16,7 @@ def get_llm_provider(llm_config: LlmConfig) -> LlmProvider:
             model=llm_config.groq_model,
             base_url=llm_config.groq_base_url,
             timeout_seconds=llm_config.request_timeout_seconds,
+            reasoning_effort=llm_config.reasoning_effort,
         )
     if provider == "copilot":
         return CopilotProvider(

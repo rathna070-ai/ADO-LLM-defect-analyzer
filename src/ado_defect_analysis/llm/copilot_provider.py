@@ -40,7 +40,7 @@ class CopilotProvider(LlmProvider):
         user_prompt: str,
         schema: dict[str, Any],
         temperature: float = 0.0,
-        max_tokens: int = 2048,
+        max_tokens: int = 5120,
     ) -> dict[str, Any]:
         raise LlmProviderError(
             "LLM_PROVIDER=copilot is reserved for a future Copilot/GitHub Models "

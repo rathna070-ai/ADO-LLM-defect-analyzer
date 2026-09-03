@@ -29,6 +29,46 @@ def test_complete_json_parses_groq_response():
 
 
 @responses.activate
+def test_reasoning_effort_is_sent_when_configured():
+    responses.add(
+        responses.POST,
+        "https://api.groq.com/openai/v1/chat/completions",
+        json={"choices": [{"message": {"content": "{}"}}]},
+        status=200,
+    )
+    provider = GroqProvider(
+        api_key="test-key",
+        model="openai/gpt-oss-120b",
+        base_url="https://api.groq.com/openai/v1",
+        reasoning_effort="low",
+    )
+
+    provider.complete_json(system_prompt="s", user_prompt="u", schema={"type": "object"})
+
+    assert json.loads(responses.calls[0].request.body)["reasoning_effort"] == "low"
+
+
+@responses.activate
+def test_reasoning_effort_is_omitted_when_blank():
+    """Non-reasoning models 400 on the parameter, so it must not be sent blank."""
+    responses.add(
+        responses.POST,
+        "https://api.groq.com/openai/v1/chat/completions",
+        json={"choices": [{"message": {"content": "{}"}}]},
+        status=200,
+    )
+    provider = GroqProvider(
+        api_key="test-key",
+        model="llama-3.3-70b-versatile",
+        base_url="https://api.groq.com/openai/v1",
+    )
+
+    provider.complete_json(system_prompt="s", user_prompt="u", schema={"type": "object"})
+
+    assert "reasoning_effort" not in json.loads(responses.calls[0].request.body)
+
+
+@responses.activate
 def test_complete_json_raises_on_non_200():
     responses.add(
         responses.POST,

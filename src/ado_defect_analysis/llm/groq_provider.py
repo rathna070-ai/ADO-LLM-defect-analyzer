@@ -18,7 +18,14 @@ from .base import LlmProvider, LlmProviderError
 
 
 class GroqProvider(LlmProvider):
-    def __init__(self, api_key: str, model: str, base_url: str, timeout_seconds: int = 60):
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        base_url: str,
+        timeout_seconds: int = 60,
+        reasoning_effort: str = "",
+    ):
         if not api_key:
             raise LlmProviderError(
                 "GROQ_API_KEY is not set. Add it to .env or export it before running the pipeline."
@@ -27,6 +34,7 @@ class GroqProvider(LlmProvider):
         self._model = model
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
+        self._reasoning_effort = reasoning_effort
         # Retries honour Groq's Retry-After on 429, which doubles as the
         # rate-limit pacing a long categorize run needs.
         self._session = build_retrying_session()
@@ -42,7 +50,7 @@ class GroqProvider(LlmProvider):
         user_prompt: str,
         schema: dict[str, Any],
         temperature: float = 0.0,
-        max_tokens: int = 2048,
+        max_tokens: int = 5120,
     ) -> dict[str, Any]:
         schema_instruction = (
             "Respond with a single JSON object only, no prose, matching this shape:\n"
@@ -58,6 +66,10 @@ class GroqProvider(LlmProvider):
             "max_tokens": max_tokens,
             "response_format": {"type": "json_object"},
         }
+        # Only reasoning models accept this; sending it to one that doesn't
+        # is a 400, so an empty setting omits it entirely.
+        if self._reasoning_effort:
+            payload["reasoning_effort"] = self._reasoning_effort
         response = self._session.post(
             f"{self._base_url}/chat/completions",
             headers={

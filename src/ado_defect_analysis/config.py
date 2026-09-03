@@ -73,13 +73,21 @@ class AdoConfig:
 class LlmConfig:
     provider: str = "groq"
     groq_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-120b"
     groq_base_url: str = "https://api.groq.com/openai/v1"
     copilot_api_key: str = ""
     copilot_model: str = ""
     request_timeout_seconds: int = 60
     temperature: float = 0.0
-    max_tokens: int = 2048
+    # Sized for a reasoning model: gpt-oss-120b spends part of this budget on
+    # internal reasoning tokens before emitting any JSON, and a budget that
+    # runs out mid-object truncates the response into a failed batch.
+    max_tokens: int = 5120
+    # Reasoning models accept low/medium/high. Categorization is a bounded
+    # classification task, not open-ended problem solving, so "low" keeps the
+    # reasoning-token spend (and latency) down without hurting the judgment.
+    # Blank it out for a provider or model that rejects the parameter.
+    reasoning_effort: str = "low"
     categorize_batch_size: int = 10
 
 
@@ -124,13 +132,14 @@ class Config:
         llm = LlmConfig(
             provider=os.environ.get("LLM_PROVIDER", "groq").lower(),
             groq_api_key=os.environ.get("GROQ_API_KEY", ""),
-            groq_model=os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
+            groq_model=os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b"),
             groq_base_url=os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
             copilot_api_key=os.environ.get("COPILOT_API_KEY", ""),
             copilot_model=os.environ.get("COPILOT_MODEL", ""),
             request_timeout_seconds=_env_int("LLM_REQUEST_TIMEOUT_SECONDS", 60),
             temperature=float(os.environ.get("LLM_TEMPERATURE", "0.0")),
-            max_tokens=_env_int("LLM_MAX_TOKENS", 2048),
+            max_tokens=_env_int("LLM_MAX_TOKENS", 5120),
+            reasoning_effort=os.environ.get("LLM_REASONING_EFFORT", "low"),
             categorize_batch_size=_env_int("LLM_CATEGORIZE_BATCH_SIZE", 10),
         )
         db_path = _env_path("DEFECT_DB_PATH", cls.db_path)

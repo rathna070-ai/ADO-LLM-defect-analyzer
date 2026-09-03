@@ -35,7 +35,7 @@ class LlmProvider(ABC):
         user_prompt: str,
         schema: dict[str, Any],
         temperature: float = 0.0,
-        max_tokens: int = 2048,
+        max_tokens: int = 5120,
     ) -> dict[str, Any]:
         """Send a prompt and return a dict matching `schema`.
 
