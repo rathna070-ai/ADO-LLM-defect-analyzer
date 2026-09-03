@@ -18,9 +18,13 @@ htmlcov/
 # Secrets — never commit real API keys or PATs
 .env
 
-# Runtime-generated, not source
-data/*.db
+# Runtime-generated, not source. The ** forms matter: a plain data/*.db misses
+# nested copies such as data/backup-<stamp>/defects.db.
+data/**/*.db
+data/**/*.db-wal
+data/**/*.db-shm
 data/exports/
+data/backup-*/
 
 # Locally generated sample export for exercising the upload flow — synthetic
 # data shouldn't be mistaken for a real extract.

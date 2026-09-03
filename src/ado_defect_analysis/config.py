@@ -123,12 +123,13 @@ class LlmConfig:
     # reasoning-token spend (and latency) down without hurting the judgment.
     # Blank it out for a provider or model that rejects the parameter.
     reasoning_effort: str = "low"
-    # The system prompt and schema (~2.8k tokens) are re-sent on every call,
-    # so under a tokens-per-minute cap a bigger batch amortises that overhead
-    # and is markedly faster overall: at batch 5 it costs ~670 tokens/defect,
-    # at batch 15 ~300. Bounded by max_tokens, which the whole batch's output
-    # has to fit inside.
-    categorize_batch_size: int = 15
+    # Two competing pressures. The system prompt and schema (~2.65k tokens) are
+    # re-sent every call, so a bigger batch amortises that overhead — but the
+    # whole call must fit inside one minute's token budget or it is refused
+    # outright and retried, which is far slower than a smaller call that
+    # succeeds first time. At 10 a call is ~5,960 tokens against an 8,000/min
+    # cap, leaving real headroom; at 15 it was ~7,015 and kept hitting 429s.
+    categorize_batch_size: int = 10
     # Batches run concurrently up to this many workers. Defaults to 1 because
     # Groq enforces its rate limit per *organization*, not per key — extra
     # keys from the same org buy no extra throughput and just trade 200s for
@@ -209,7 +210,7 @@ class Config:
             strict_schema=os.environ.get("LLM_STRICT_SCHEMA", "false").lower() == "true",
             cost_per_mtok_input=float(os.environ.get("LLM_COST_PER_MTOK_INPUT", "0")),
             cost_per_mtok_output=float(os.environ.get("LLM_COST_PER_MTOK_OUTPUT", "0")),
-            categorize_batch_size=_env_int("LLM_CATEGORIZE_BATCH_SIZE", 15),
+            categorize_batch_size=_env_int("LLM_CATEGORIZE_BATCH_SIZE", 10),
             max_concurrency=max(1, _env_int("LLM_MAX_CONCURRENCY", 1)),
             batch_strategy=os.environ.get("LLM_BATCH_STRATEGY", "fixed").lower(),
         )
