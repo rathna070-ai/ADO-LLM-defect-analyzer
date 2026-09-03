@@ -16,6 +16,8 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+import jsonschema
+
 from ..config import Config
 from ..llm import LlmProvider, LlmProviderError, get_llm_provider
 from ..models import Defect, DefectCategorization
@@ -173,6 +175,7 @@ def _categorize_batch(
         temperature=config.llm.temperature,
         max_tokens=config.llm.max_tokens,
     )
+    _validate_response(result, strict=config.llm.strict_schema)
 
     known_ids = {d.id for d in batch}
     hashes = {d.id: _input_hash(d) for d in batch}
@@ -220,6 +223,37 @@ def _categorize_batch(
             f"LLM did not return categorizations for defect ids: {sorted(missing)}"
         )
     return categorizations
+
+
+def _validate_response(result: dict, strict: bool) -> None:
+    """Check the response against the schema we actually ship.
+
+    JSON mode guarantees syntactically valid JSON, not conformance — so
+    without this, a response with `confidence` as a string or `results` as an
+    object surfaces as a confusing downstream coercion rather than a clear
+    "the model returned the wrong shape".
+
+    Non-strict (the default) logs the precise offending path and lets the
+    lenient per-field handling below take over, which keeps one malformed
+    field from costing the whole batch. Strict rejects the batch instead.
+    """
+    errors = sorted(
+        jsonschema.Draft202012Validator(_SCHEMA).iter_errors(result), key=lambda e: list(e.path)
+    )
+    if not errors:
+        return
+
+    detail = "; ".join(
+        f"{'/'.join(str(p) for p in e.path) or '<root>'}: {e.message}" for e in errors[:5]
+    )
+    if strict:
+        raise LlmProviderError(f"LLM response failed schema validation: {detail}")
+    logger.warning(
+        "LLM response failed schema validation (%d error(s)); falling back to lenient "
+        "field handling. First errors: %s",
+        len(errors),
+        detail,
+    )
 
 
 def _parse_confidence(raw: object, defect_id: int) -> float:

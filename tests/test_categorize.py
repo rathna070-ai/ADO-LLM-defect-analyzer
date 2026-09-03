@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -236,6 +237,67 @@ def test_run_categorize_coerces_and_clamps_confidence(
     run_categorize(config, provider=FakeProvider(response=response))
 
     assert store.get_categorized_defects()[0]["confidence"] == expected
+
+
+def _malformed_response() -> dict:
+    """Right JSON, wrong shape: confidence is a string, sdlc_phase is missing."""
+    return {
+        "results": [
+            {
+                "defect_id": 1,
+                "root_cause_category": "code_defect",
+                "testing_gap_flag": True,
+                "summary": "stub",
+                "confidence": "very high",
+            }
+        ]
+    }
+
+
+def test_schema_violation_is_tolerated_by_default(tmp_path: Path, caplog):
+    """Lenient mode: log the offending path, still salvage the batch."""
+    config = _config(tmp_path)
+    store = DefectStore(config.db_path)
+    store.upsert_defects([_defect(1)])
+
+    with caplog.at_level(logging.WARNING):
+        count = run_categorize(config, provider=FakeProvider(response=_malformed_response()))
+
+    assert count == 1
+    assert "failed schema validation" in caplog.text
+    row = store.get_categorized_defects()[0]
+    assert row["confidence"] == 0.0
+    assert row["sdlc_phase"] == "unknown"
+
+
+def test_schema_violation_fails_the_batch_in_strict_mode(tmp_path: Path, caplog):
+    """Strict mode rejects the batch; nothing is stored from it.
+
+    The run then raises via the all-batches-failed path, with the precise
+    schema error in the log rather than a silent coercion.
+    """
+    config = _config(tmp_path)
+    config.llm.strict_schema = True
+    store = DefectStore(config.db_path)
+    store.upsert_defects([_defect(1)])
+
+    with caplog.at_level(logging.WARNING), pytest.raises(LlmProviderError):
+        run_categorize(config, provider=FakeProvider(response=_malformed_response()))
+
+    assert store.get_categorized_defects() == []
+    assert "'confidence'" in caplog.text or "confidence" in caplog.text
+    assert "sdlc_phase" in caplog.text
+
+
+def test_valid_response_passes_validation_silently(tmp_path: Path, caplog):
+    config = _config(tmp_path)
+    store = DefectStore(config.db_path)
+    store.upsert_defects([_defect(1)])
+
+    with caplog.at_level(logging.WARNING):
+        run_categorize(config, provider=FakeProvider())
+
+    assert "schema validation" not in caplog.text
 
 
 def test_run_categorize_continues_after_a_failed_batch(tmp_path: Path):

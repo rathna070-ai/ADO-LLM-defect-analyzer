@@ -89,6 +89,11 @@ class LlmConfig:
     # Blank it out for a provider or model that rejects the parameter.
     reasoning_effort: str = "low"
     categorize_batch_size: int = 10
+    # When false (the default), a response that violates the JSON schema is
+    # logged with the offending path and then handled leniently — bad enum
+    # values become "unknown" rather than losing the whole batch. Turn it on
+    # to reject such a batch outright instead.
+    strict_schema: bool = False
 
 
 @dataclass
@@ -140,6 +145,7 @@ class Config:
             temperature=float(os.environ.get("LLM_TEMPERATURE", "0.0")),
             max_tokens=_env_int("LLM_MAX_TOKENS", 5120),
             reasoning_effort=os.environ.get("LLM_REASONING_EFFORT", "low"),
+            strict_schema=os.environ.get("LLM_STRICT_SCHEMA", "false").lower() == "true",
             categorize_batch_size=_env_int("LLM_CATEGORIZE_BATCH_SIZE", 10),
         )
         db_path = _env_path("DEFECT_DB_PATH", cls.db_path)
