@@ -1,0 +1,35 @@
+{
+  "type": "object",
+  "properties": {
+    "headline": {
+      "type": "string",
+      "description": "One sentence an exec would remember."
+    },
+    "top_root_causes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "2-4 bullets, each naming a root cause category and why it matters this period."
+    },
+    "hotspot_modules": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Modules with disproportionate defect density, with a one-clause reason each."
+    },
+    "trend_note": {
+      "type": "string",
+      "description": "One or two sentences on how this period compares to the prior one."
+    },
+    "recommended_actions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "2-3 concrete, actionable next steps."
+    }
+  },
+  "required": [
+    "headline",
+    "top_root_causes",
+    "hotspot_modules",
+    "trend_note",
+    "recommended_actions"
+  ]
+}

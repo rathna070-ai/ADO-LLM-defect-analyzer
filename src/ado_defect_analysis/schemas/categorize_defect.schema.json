@@ -1,0 +1,51 @@
+{
+  "type": "object",
+  "description": "One categorization per defect in the batch you were given, in any order.",
+  "properties": {
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "defect_id": {
+            "type": "integer",
+            "description": "Echo back the ADO work item id you were given for this defect."
+          },
+          "root_cause_category": {
+            "type": "string",
+            "enum": [
+              "code_defect",
+              "requirement_gap",
+              "testing_gap",
+              "environment_config",
+              "data_issue",
+              "third_party_dependency",
+              "unknown"
+            ]
+          },
+          "testing_gap_flag": {
+            "type": "boolean",
+            "description": "true if better test coverage would plausibly have caught this before release."
+          },
+          "summary": {
+            "type": "string",
+            "description": "One sentence, plain English, no jargon."
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "required": [
+          "defect_id",
+          "root_cause_category",
+          "testing_gap_flag",
+          "summary",
+          "confidence"
+        ]
+      }
+    }
+  },
+  "required": ["results"]
+}

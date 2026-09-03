@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Secrets — never commit real API keys or PATs
+.env
+
+# Runtime-generated, not source
+data/*.db
+data/exports/
