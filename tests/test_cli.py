@@ -69,6 +69,34 @@ def test_run_all_from_excel_skips_the_api_fetch(calls: dict):
     assert calls["fetch_excel"]["args"][1] == Path("export.xlsx")
 
 
+def test_report_passes_the_date_window_through(calls: dict):
+    assert cli.main(["report", "--since", "2026-01-01", "--until", "2026-03-31"]) == 0
+
+    kwargs = calls["report"]["kwargs"]
+    assert kwargs["since"] == "2026-01-01"
+    assert kwargs["until"] == "2026-03-31"
+
+
+def test_export_passes_the_date_window_through(calls: dict):
+    assert cli.main(["export", "--since", "2026-01-01"]) == 0
+
+    assert calls["export"]["kwargs"]["since"] == "2026-01-01"
+    assert calls["export"]["kwargs"]["until"] is None
+
+
+def test_run_all_scopes_report_and_export_to_the_window(calls: dict):
+    assert cli.main(["run-all", "--since", "2026-01-01", "--until", "2026-03-31"]) == 0
+
+    assert calls["report"]["kwargs"]["since"] == "2026-01-01"
+    assert calls["export"]["kwargs"]["until"] == "2026-03-31"
+
+
+def test_date_window_defaults_to_everything(calls: dict):
+    assert cli.main(["export"]) == 0
+
+    assert calls["export"]["kwargs"] == {"since": None, "until": None}
+
+
 def test_unknown_command_is_rejected():
     with pytest.raises(SystemExit):
         cli.main(["not-a-command"])

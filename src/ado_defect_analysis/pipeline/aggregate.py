@@ -25,6 +25,29 @@ def load_categorized_dataframe(config: Config) -> pd.DataFrame:
     return df
 
 
+def filter_by_closed_date(
+    df: pd.DataFrame, since: str | None = None, until: str | None = None
+) -> pd.DataFrame:
+    """Narrow to defects closed within [since, until], inclusive.
+
+    Both bounds are optional ISO dates. Rows with no closed date are dropped
+    once either bound is set — an undated defect can't be claimed to fall
+    inside a reporting window.
+    """
+    if df.empty or (since is None and until is None):
+        return df
+
+    closed = pd.to_datetime(df["closed_date"], errors="coerce", utc=True)
+    mask = closed.notna()
+    if since:
+        mask &= closed >= pd.Timestamp(since, tz="UTC")
+    if until:
+        # Inclusive of the whole end day, so --until 2026-03-31 doesn't
+        # silently drop anything closed that afternoon.
+        mask &= closed < pd.Timestamp(until, tz="UTC") + pd.Timedelta(days=1)
+    return df[mask]
+
+
 def needs_review_mask(df: pd.DataFrame, review_confidence_threshold: float = 0.6) -> pd.Series:
     """Rows a human should re-check before the analysis is trusted.
 

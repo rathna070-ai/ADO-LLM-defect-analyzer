@@ -1,6 +1,6 @@
 import pandas as pd
 
-from ado_defect_analysis.pipeline.aggregate import build_aggregates
+from ado_defect_analysis.pipeline.aggregate import build_aggregates, filter_by_closed_date
 
 
 def test_build_aggregates_empty_dataframe():
@@ -52,6 +52,31 @@ def _sample_df() -> pd.DataFrame:
     df["closed_date"] = pd.to_datetime(df["closed_date"])
     df["closed_month"] = df["closed_date"].dt.to_period("M").astype(str)
     return df
+
+
+def test_filter_by_closed_date_bounds_are_inclusive():
+    df = _sample_df()
+
+    assert len(filter_by_closed_date(df, since="2026-01-01", until="2026-01-31")) == 2
+    # The end day counts in full — a defect closed on the boundary date stays.
+    assert len(filter_by_closed_date(df, since="2026-01-20", until="2026-01-20")) == 1
+    assert len(filter_by_closed_date(df, since="2026-02-01")) == 1
+    assert len(filter_by_closed_date(df, until="2026-01-05")) == 1
+
+
+def test_filter_by_closed_date_without_bounds_is_a_passthrough():
+    df = _sample_df()
+
+    assert len(filter_by_closed_date(df)) == len(df)
+
+
+def test_filter_by_closed_date_drops_undated_rows_when_scoped():
+    """An undated defect can't be claimed to fall inside a reporting window."""
+    df = _sample_df()
+    df.loc[0, "closed_date"] = pd.NaT
+
+    assert len(filter_by_closed_date(df, since="2026-01-01")) == 2
+    assert len(filter_by_closed_date(df)) == 3
 
 
 def test_build_aggregates_computes_distributions():

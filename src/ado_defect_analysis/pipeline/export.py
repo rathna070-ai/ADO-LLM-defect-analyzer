@@ -11,14 +11,23 @@ from __future__ import annotations
 import logging
 
 from ..config import Config
-from .aggregate import load_categorized_dataframe, needs_review_mask
+from .aggregate import filter_by_closed_date, load_categorized_dataframe, needs_review_mask
 
 logger = logging.getLogger(__name__)
 
 
-def run_export(config: Config, formats: tuple[str, ...] = ("csv", "xlsx")) -> list[str]:
-    """Returns the list of file paths written."""
-    df = load_categorized_dataframe(config)
+def run_export(
+    config: Config,
+    formats: tuple[str, ...] = ("csv", "xlsx"),
+    since: str | None = None,
+    until: str | None = None,
+) -> list[str]:
+    """Returns the list of file paths written.
+
+    `since`/`until` scope the export to defects closed in a window, so a
+    quarterly extract doesn't have to mean "everything in the DB".
+    """
+    df = filter_by_closed_date(load_categorized_dataframe(config), since, until)
     if df.empty:
         logger.warning("No categorized defects to export. Run fetch and categorize first.")
         return []

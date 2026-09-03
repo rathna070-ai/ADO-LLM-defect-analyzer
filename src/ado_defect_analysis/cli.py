@@ -61,8 +61,12 @@ def _build_parser() -> argparse.ArgumentParser:
             "non-deterministic model."
         ),
     )
-    subparsers.add_parser("report", help="Generate the exec-tone narrative summary.")
-    subparsers.add_parser("export", help="Export categorized defects to CSV/Excel.")
+    report_parser = subparsers.add_parser(
+        "report", help="Generate the exec-tone narrative summary."
+    )
+    export_parser = subparsers.add_parser("export", help="Export categorized defects to CSV/Excel.")
+    for date_scoped in (report_parser, export_parser):
+        _add_date_window_args(date_scoped)
 
     run_all_parser = subparsers.add_parser(
         "run-all", help="Run fetch, categorize, report, and export in sequence."
@@ -74,8 +78,25 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Same as `fetch --from-excel` — skips the ADO API for the fetch step.",
     )
+    _add_date_window_args(run_all_parser)
 
     return parser
+
+
+def _add_date_window_args(parser: argparse.ArgumentParser) -> None:
+    """Scope a stage to defects closed within a window, e.g. one quarter."""
+    parser.add_argument(
+        "--since",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help="Only include defects closed on or after this date.",
+    )
+    parser.add_argument(
+        "--until",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help="Only include defects closed on or before this date (inclusive).",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -93,10 +114,10 @@ def main(argv: list[str] | None = None) -> int:
         count = run_categorize(config, recategorize_all=args.recategorize_all, force=args.force)
         print(f"Categorized {count} defects.")
     elif args.command == "report":
-        narrative = run_report(config)
+        narrative = run_report(config, since=args.since, until=args.until)
         print(json.dumps(narrative, indent=2))
     elif args.command == "export":
-        paths = run_export(config)
+        paths = run_export(config, since=args.since, until=args.until)
         print("Exported:\n" + "\n".join(paths))
     elif args.command == "run-all":
         if args.from_excel:
@@ -104,8 +125,8 @@ def main(argv: list[str] | None = None) -> int:
         else:
             run_fetch(config)
         run_categorize(config)
-        run_report(config)
-        run_export(config)
+        run_report(config, since=args.since, until=args.until)
+        run_export(config, since=args.since, until=args.until)
         print("Pipeline complete.")
     return 0
 

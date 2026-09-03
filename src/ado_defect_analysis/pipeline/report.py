@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ..config import Config
 from ..llm import LlmProvider, get_llm_provider
-from .aggregate import build_aggregates, load_categorized_dataframe
+from .aggregate import build_aggregates, filter_by_closed_date, load_categorized_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +19,18 @@ _SYSTEM_PROMPT = (_PROMPTS_DIR / "narrative_summary.md").read_text()
 _SCHEMA = json.loads((_SCHEMAS_DIR / "narrative_summary.schema.json").read_text())
 
 
-def run_report(config: Config, provider: LlmProvider | None = None) -> dict:
-    """Returns the narrative dict (also matches narrative_summary.schema.json)."""
-    df = load_categorized_dataframe(config)
+def run_report(
+    config: Config,
+    provider: LlmProvider | None = None,
+    since: str | None = None,
+    until: str | None = None,
+) -> dict:
+    """Returns the narrative dict (also matches narrative_summary.schema.json).
+
+    `since`/`until` scope the narrative to defects closed in a window, so a
+    quarterly summary doesn't have to mean "everything in the DB".
+    """
+    df = filter_by_closed_date(load_categorized_dataframe(config), since, until)
     aggregates = build_aggregates(
         df, config.rejected_resolutions, config.review_confidence_threshold
     )
