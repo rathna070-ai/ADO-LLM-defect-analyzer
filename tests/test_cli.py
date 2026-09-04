@@ -100,3 +100,57 @@ def test_date_window_defaults_to_everything(calls: dict):
 def test_unknown_command_is_rejected():
     with pytest.raises(SystemExit):
         cli.main(["not-a-command"])
+
+
+def test_secrets_status_prints_sources_without_values(
+    calls: dict, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    monkeypatch.setattr(
+        cli, "secret_status", lambda: {"GROQ_API_KEY": "credential store (37 chars)"}
+    )
+
+    assert cli.main(["secrets", "status"]) == 0
+
+    out = capsys.readouterr().out
+    assert "GROQ_API_KEY" in out
+    assert "credential store (37 chars)" in out
+
+
+def test_secrets_set_reads_the_value_from_a_hidden_prompt(
+    calls: dict, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    """Never an argv value — that would land in shell history and `ps` output."""
+    stored: dict[str, str] = {}
+    monkeypatch.setattr(cli.getpass, "getpass", lambda prompt: "  gsk_typed  ")
+    monkeypatch.setattr(cli, "set_secret", lambda name, value: stored.update({name: value}))
+
+    assert cli.main(["secrets", "set", "GROQ_API_KEY"]) == 0
+
+    assert stored == {"GROQ_API_KEY": "gsk_typed"}
+    assert "gsk_typed" not in capsys.readouterr().out
+
+
+def test_secrets_set_with_an_empty_entry_leaves_the_stored_value_alone(
+    calls: dict, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(cli.getpass, "getpass", lambda prompt: "")
+
+    def _fail(name, value):  # pragma: no cover - must not be reached
+        raise AssertionError("an empty entry must not overwrite a stored key")
+
+    monkeypatch.setattr(cli, "set_secret", _fail)
+
+    assert cli.main(["secrets", "set", "GROQ_API_KEY"]) == 1
+
+
+def test_secrets_clear_reports_when_nothing_was_stored(
+    calls: dict, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    monkeypatch.setattr(cli, "clear_secret", lambda name: False)
+
+    assert cli.main(["secrets", "clear", "ADO_PAT"]) == 0
+    assert "nothing stored" in capsys.readouterr().out
+
+
+def test_secrets_set_without_a_name_is_a_usage_error(calls: dict):
+    assert cli.main(["secrets", "set"]) == 2

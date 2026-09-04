@@ -21,12 +21,38 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -e ".[dev,dashboard]"
 
 cp .env.example .env
-# fill in ADO_ORGANIZATION / ADO_PROJECT / ADO_PAT and GROQ_API_KEY
+# fill in ADO_ORGANIZATION / ADO_PROJECT, then store the credentials (below)
 ```
 
 The install is editable, so the package is importable everywhere (tests and the
 dashboard rely on that rather than any `sys.path` juggling). `.env.example`
 documents every setting the pipeline reads.
+
+### Keeping API keys out of `.env`
+
+`ADO_PAT`, `GROQ_API_KEY`, and `AZURE_API_KEY` resolve from the environment
+first and then from your OS credential store, so they can be left blank in
+`.env` entirely:
+
+```bash
+pip install -e ".[secrets]"
+ado-defect-analysis secrets set GROQ_API_KEY   # prompts; input is hidden
+ado-defect-analysis secrets status             # shows the source, never the value
+ado-defect-analysis secrets clear ADO_PAT
+```
+
+The value goes into Windows Credential Manager, macOS Keychain, or the Linux
+Secret Service, encrypted under your user account — not into a file that can be
+committed by accident, copied along with the folder, swept into a backup, or
+read over a shared screen. `set` takes the key from a hidden prompt rather than
+an argument, so it never reaches shell history or the process list.
+
+Be clear about the limit: the process must present the key to the provider in
+plaintext at call time, so it has to be able to recover it. This changes *where
+the key rests*, not whether code running as you could read it. Environment
+variables still win over the store, which is what lets a container or CI job
+inject a credential without a keyring; and where no backend exists (headless
+CI), resolution quietly falls back to environment-only rather than failing.
 
 ## Run it
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import logging
 import sys
@@ -13,6 +14,7 @@ from .pipeline.categorize import run_categorize
 from .pipeline.export import run_export
 from .pipeline.fetch import run_fetch, run_fetch_from_excel
 from .pipeline.report import run_report
+from .secrets import MANAGED_SECRETS, clear_secret, secret_status, set_secret
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -68,6 +70,18 @@ def _build_parser() -> argparse.ArgumentParser:
     for date_scoped in (report_parser, export_parser):
         _add_date_window_args(date_scoped)
 
+    secrets_parser = subparsers.add_parser(
+        "secrets",
+        help="Store credentials in the OS credential store instead of a plaintext .env.",
+    )
+    secrets_parser.add_argument("action", choices=("status", "set", "clear"), help="What to do.")
+    secrets_parser.add_argument(
+        "name",
+        nargs="?",
+        choices=MANAGED_SECRETS,
+        help="Which credential (required for set/clear).",
+    )
+
     run_all_parser = subparsers.add_parser(
         "run-all", help="Run fetch, categorize, report, and export in sequence."
     )
@@ -99,6 +113,39 @@ def _add_date_window_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _run_secrets(args: argparse.Namespace) -> int:
+    """Manage credentials without ever writing them to a file.
+
+    `set` reads the value from a prompt rather than an argument, so the key
+    does not end up in shell history or in the process list.
+    """
+    if args.action == "status":
+        for name, source in secret_status().items():
+            print(f"  {name:<16} {source}")
+        return 0
+
+    if not args.name:
+        print(f"Specify which credential: {', '.join(MANAGED_SECRETS)}")
+        return 2
+
+    if args.action == "clear":
+        removed = clear_secret(args.name)
+        print(f"{args.name}: {'removed' if removed else 'nothing stored'}")
+        return 0
+
+    value = getpass.getpass(f"{args.name} (input hidden): ").strip()
+    if not value:
+        print("Nothing entered; leaving the stored value untouched.")
+        return 1
+    try:
+        set_secret(args.name, value)
+    except RuntimeError as exc:
+        print(str(exc))
+        return 1
+    print(f"{args.name}: stored in the OS credential store. Remove it from .env now.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     parser = _build_parser()
@@ -113,6 +160,8 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "categorize":
         count = run_categorize(config, recategorize_all=args.recategorize_all, force=args.force)
         print(f"Categorized {count} defects.")
+    elif args.command == "secrets":
+        return _run_secrets(args)
     elif args.command == "report":
         narrative = run_report(config, since=args.since, until=args.until)
         print(json.dumps(narrative, indent=2))

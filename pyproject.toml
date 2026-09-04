@@ -31,6 +31,10 @@ dependencies = [
 # The dashboard is a runtime feature, not a dev tool — it lived in
 # requirements-dev.txt only because there was nowhere better to put it.
 dashboard = ["streamlit>=1.38"]
+# Keeps API keys in the OS credential store (Windows Credential Manager,
+# macOS Keychain, Secret Service) instead of a plaintext .env. Optional
+# because headless CI has no backend and falls back to environment variables.
+secrets = ["keyring>=25.0"]
 dev = [
     "pytest>=8.0",
     "responses>=0.25",

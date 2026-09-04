@@ -13,6 +13,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .secrets import get_secret
+
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -63,7 +65,13 @@ def _groq_api_keys() -> list[str]:
     Accepts a comma-separated `GROQ_API_KEY` as well as a separate
     `GROQ_API_KEYS`, so adding a second key needs no config restructuring.
     """
-    raw = [*_env_list("GROQ_API_KEY", []), *_env_list("GROQ_API_KEYS", [])]
+
+    def _split(value: str) -> list[str]:
+        return [item.strip() for item in value.split(",") if item.strip()]
+
+    # get_secret falls back to the OS credential store, so a key held there is
+    # found even with nothing in .env.
+    raw = [*_split(get_secret("GROQ_API_KEY")), *_split(get_secret("GROQ_API_KEYS"))]
     return list(dict.fromkeys(key for key in raw if key))
 
 
@@ -215,7 +223,7 @@ class Config:
         ado = AdoConfig(
             organization=os.environ.get("ADO_ORGANIZATION", ""),
             project=os.environ.get("ADO_PROJECT", ""),
-            pat=os.environ.get("ADO_PAT", ""),
+            pat=get_secret("ADO_PAT"),
             api_version=os.environ.get("ADO_API_VERSION", "7.1"),
             work_item_type=os.environ.get("ADO_WORK_ITEM_TYPE", "Bug"),
             area_path=os.environ.get("ADO_AREA_PATH", ""),
@@ -229,11 +237,11 @@ class Config:
         )
         llm = LlmConfig(
             provider=os.environ.get("LLM_PROVIDER", "groq").lower(),
-            groq_api_key=os.environ.get("GROQ_API_KEY", ""),
+            groq_api_key=get_secret("GROQ_API_KEY"),
             groq_api_keys=_groq_api_keys(),
             groq_model=os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b"),
             groq_base_url=os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
-            azure_api_key=os.environ.get("AZURE_API_KEY", ""),
+            azure_api_key=get_secret("AZURE_API_KEY"),
             azure_deployment=os.environ.get("AZURE_DEPLOYMENT", ""),
             azure_base_url=os.environ.get("AZURE_BASE_URL", ""),
             request_timeout_seconds=_env_int("LLM_REQUEST_TIMEOUT_SECONDS", 60),
