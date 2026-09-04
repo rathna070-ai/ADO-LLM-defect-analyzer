@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from ..capa import actions_for
 from ..config import (
     DEFAULT_BORDERLINE_RESOLUTIONS,
     DEFAULT_REJECTED_RESOLUTIONS,
@@ -103,6 +104,10 @@ def build_aggregates(
             "rca_pareto": [],
             "rca_sdlc_crosstab": {},
             "needs_review_count": 0,
+            "severity_mix": {},
+            "escape_rate": 0.0,
+            "top_rca_contributors": [],
+            "top_area_contributors": [],
         }
 
     rejected_resolutions = rejected_resolutions or DEFAULT_REJECTED_RESOLUTIONS
@@ -198,7 +203,120 @@ def build_aggregates(
         "rca_pareto": _pareto(root_cause_distribution),
         "rca_sdlc_crosstab": rca_sdlc_crosstab,
         "needs_review_count": int(needs_review_mask(df, review_confidence_threshold).sum()),
+        "severity_mix": _severity_mix(df),
+        "escape_rate": _escape_rate(df),
+        "top_rca_contributors": top_rca_contributors(df),
+        "top_area_contributors": top_area_contributors(
+            df,
+            rejected_resolutions=rejected_resolutions,
+            borderline_resolutions=borderline_resolutions,
+        ),
     }
+
+
+def _severity_mix(df: pd.DataFrame) -> dict:
+    """Share of high-impact defects — the number leadership reads first."""
+    if "severity" not in df.columns:
+        return {}
+    sev = df["severity"].fillna("").astype(str).str.strip()
+    counts = {str(k): int(v) for k, v in sev.value_counts().items() if k}
+    # ADO severities are conventionally "1 - Critical" / "2 - High"; match on
+    # ADO severities are conventionally "1 - Critical" / "2 - High". Pull the
+    # leading number and compare numerically rather than pattern-matching the
+    # label, so custom wording still classifies and "12 - ..." is not read as a 1.
+    leading = sev.str.extract(r"^\s*(\d+)", expand=False)
+    critical_high = int(pd.to_numeric(leading, errors="coerce").isin([1, 2]).sum())
+    return {
+        "counts": counts,
+        "critical_high": critical_high,
+        "critical_high_rate": round(critical_high / len(df), 4) if len(df) else 0.0,
+    }
+
+
+def _escape_rate(df: pd.DataFrame) -> float:
+    """Share of defects whose root cause traces to post-development phases.
+
+    A proxy for leakage: work that reached build/release or production before
+    anyone caught it. Real containment analysis needs introduced-vs-found
+    fields, which most exports don't carry.
+    """
+    if "sdlc_phase" not in df.columns or df.empty:
+        return 0.0
+    late = df["sdlc_phase"].isin(["build_release", "production_operations"])
+    return round(float(late.mean()), 4)
+
+
+def top_rca_contributors(df: pd.DataFrame, limit: int = 5) -> list[dict]:
+    """The categories driving most defects, with where they concentrate."""
+    if df.empty:
+        return []
+    rows: list[dict] = []
+    total = len(df)
+    for category, count in df["root_cause_category"].value_counts().head(limit).items():
+        subset = df[df["root_cause_category"] == category]
+        areas = subset["module"].value_counts()
+        capa = actions_for(str(category))
+        rows.append(
+            {
+                "category": str(category),
+                "count": int(count),
+                "share": round(int(count) / total, 4),
+                "top_area": str(areas.index[0]) if len(areas) else "—",
+                "top_area_count": int(areas.iloc[0]) if len(areas) else 0,
+                "testing_gap_rate": round(float(subset["testing_gap_flag"].astype(bool).mean()), 4),
+                "corrective": capa.corrective,
+                "preventive": capa.preventive,
+                "priority": capa.priority,
+            }
+        )
+    return rows
+
+
+def top_area_contributors(
+    df: pd.DataFrame,
+    limit: int = 5,
+    rejected_resolutions: list[str] | None = None,
+    borderline_resolutions: list[str] | None = None,
+) -> list[dict]:
+    """The areas generating most defects, each with its dominant root cause.
+
+    Rejection rate is reported per area because a high one means something
+    different from a high defect count: unclear requirements or test design
+    rather than poor product quality.
+    """
+    if df.empty:
+        return []
+    rejected_lower = {
+        r.strip().lower() for r in (rejected_resolutions or DEFAULT_REJECTED_RESOLUTIONS)
+    }
+    borderline_lower = {
+        r.strip().lower() for r in (borderline_resolutions or DEFAULT_BORDERLINE_RESOLUTIONS)
+    }
+    rows: list[dict] = []
+    total = len(df)
+    for area, count in df["module"].value_counts().head(limit).items():
+        subset = df[df["module"] == area]
+        causes = subset["root_cause_category"].value_counts()
+        dominant = str(causes.index[0]) if len(causes) else "unknown"
+        borderline_reason = _matches(subset, "resolution", borderline_lower)
+        rejected_reason = _matches(subset, "resolution", rejected_lower)
+        is_rejected = rejected_reason | (
+            _matches(subset, "state", rejected_lower) & ~borderline_reason & ~rejected_reason
+        )
+        capa = actions_for(dominant)
+        rows.append(
+            {
+                "area_path": str(area),
+                "count": int(count),
+                "share": round(int(count) / total, 4),
+                "dominant_cause": dominant,
+                "dominant_cause_count": int(causes.iloc[0]) if len(causes) else 0,
+                "rejection_rate": round(float(is_rejected.mean()), 4) if len(subset) else 0.0,
+                "corrective": capa.corrective,
+                "preventive": capa.preventive,
+            }
+        )
+    return rows
 
 
 def _pareto(distribution: dict[str, int]) -> list[dict]:
