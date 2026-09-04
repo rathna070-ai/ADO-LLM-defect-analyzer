@@ -147,31 +147,54 @@ Two further fields, when the export carries them:
   Treat a high user impact with a low severity as a mis-rating worth noting in
   the summary, not as evidence about the cause.
 
-## When description and resolution notes are blank
+## When `root_cause_raw` is blank
 
-This is the normal case, not an excuse to answer `unknown`. Infer from the
-title, the tags, and the area path, and set confidence to match the strength
-of that inference (see below). Worked examples:
+The common case, and not an excuse to answer `unknown`. Work down this order
+until a field settles it, then set confidence to match how far down you had
+to go:
 
-- "Numeric field accepts out-of-range input" → missing input validation →
-  `coding_error`, `development`.
-- "Date field not populated in renewal form for a multi-item scenario" → a
-  field not populated in a specific branch → `coding_error`, `development`.
-- "A column shows 'No data' for a specific record" → a value absent from the
-  source → `data_defect`, likelier than a logic bug.
-- "Unable to access an item on one site" → access or environment problem →
-  `configuration_defect`, unless a tag says otherwise.
-- "Two limits not applying together when both configured" → two rules
-  interacting wrongly → `coding_error` (or `design_flaw` if the notes suggest
-  the rules were never designed to combine).
-- "Exists in Prod / works in QA" → an environment difference →
-  `configuration_defect` or `build_deployment_defect`.
+1. **`resolution_notes`** — what was actually changed is the strongest
+   substitute for a stated cause.
+2. **`comments`** — the discussion often names the cause explicitly.
+3. **`tags`** — the team's own triage vocabulary (see above).
+4. **`title`** — read it as a symptom and infer the mechanism, using the
+   standard symptom-to-cause patterns below.
+5. **`found_in_environment` and `sdlc_phase_raw`** — these fix the *phase*
+   and the containment judgment, never the cause on their own.
+6. **`area_path`, `severity`, `user_impact`** — context and emphasis only.
 
-Reserve `unknown` for a title that carries no technical signal whatsoever —
-"Issue", "Test ticket", "Follow-up", a bare ticket number. If you can name a
-plausible mechanism from the title, classify it and lower the confidence
-instead. A well-reasoned low-confidence answer is far more useful than
-`unknown`, because a reviewer can confirm or correct it.
+### Standard symptom-to-cause patterns
+
+Defect-classification practice maps an observed symptom to its likeliest
+defect type. Apply these unless another field contradicts them:
+
+- Wrong value, calculation, total, or mismatch → `coding_error` (logic).
+- Invalid input accepted, negative or boundary values, missing validation →
+  `coding_error` (validation).
+- Field not populated, not saved, not reflecting, not updating →
+  `coding_error`.
+- Missing, blank, stale, duplicated records, or wrong reference data →
+  `data_defect`.
+- Slow, timeout, hang, or degradation under load → `performance_defect`.
+- Access denied, permission, role, or authorisation → `security_defect` when
+  a control genuinely failed, otherwise `configuration_defect`.
+- Works in one environment but not another, or appeared straight after a
+  release → `configuration_defect`, or `build_deployment_defect` if the
+  deployment itself is implicated.
+- Upstream, downstream, API, interface, sync, or vendor → `integration_defect`,
+  or `third_party_defect` when the fault sits outside the team's code.
+- "Regression" or previously working behaviour → `coding_error`, and set
+  `testing_gap_flag: true`.
+- Behaviour disputed, requirement unclear, or "as per requirement" →
+  `requirements_gap`.
+- Layout, alignment, label, or copy → `coding_error` for front-end rendering;
+  `documentation_defect` only when the content itself is wrong.
+
+Reserve `unknown` for a title carrying no technical signal at all — "Issue",
+"Test ticket", "Follow-up", a bare ticket number. If you can name a plausible
+mechanism, classify it and lower the confidence instead: a well-reasoned
+low-confidence answer is far more useful than `unknown`, because a reviewer
+can confirm or correct it, whereas `unknown` gives them nothing to react to.
 
 ## Confidence
 
