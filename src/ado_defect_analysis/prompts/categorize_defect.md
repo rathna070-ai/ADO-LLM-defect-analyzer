@@ -41,11 +41,28 @@ answer out of whatever fields are present — not to wait for perfect data.
   work item was closed as not-a-real-defect.
 - `unknown` — genuinely nothing to go on. See the strict bar below.
 
-If the team's own `root_cause_raw` uses the native ADO CMMI picklist, map it
-straight across: "Coding Error" → `coding_error`, "Design Error" →
-`design_flaw`, "Specification Error" → `requirements_gap`, "Communication
-Error" → `process_communication_defect`, "Unknown" → judge from the other
-fields rather than copying the blank verdict.
+### Mapping the team's own root-cause value
+
+`root_cause_raw` is the team's own verdict and outranks your inference. Map it
+straight across; the value is often a short label with an optional component
+suffix after a dash, and the suffix names *where* it was, not a different
+cause — so "Code - Front-end", "Code - GI" and plain "Code" are all
+`coding_error`.
+
+- "Code", "Code - <anything>", "Coding Error" → `coding_error`
+- "Design", "Design - Logic", "Design Error" → `design_flaw`
+- "Requirements", "Requirement", "Specification Error" → `requirements_gap`
+- "Data", "Data - <anything>" → `data_defect`
+- "Configuration", "Config", "Environment" → `configuration_defect`
+- "Deployment", "Build", "Release" → `build_deployment_defect`
+- "Integration", "Interface", "API" → `integration_defect`
+- "Third Party", "Vendor" → `third_party_defect`
+- "Communication Error", "Process" → `process_communication_defect`
+- "Unknown", "Other", or blank → judge from the other fields rather than
+  copying the non-answer through.
+
+Override the team's value only when the other fields plainly contradict it,
+and say so in `evidence`.
 
 ## SDLC phase
 
@@ -53,6 +70,23 @@ Where the root cause was introduced, or where it should have been caught:
 `requirements`, `design`, `development`, `testing`, `build_release`,
 `production_operations`, `not_applicable` (pair with `not_a_defect`), or
 `unknown`.
+
+If `sdlc_phase_raw` carries the team's own value, use it rather than
+inferring. Common wordings map as: "In Sprint" / "In Development" →
+`development`; "In UAT" / "In QA" / "In Test" → `testing`; "Production" /
+"Post Production" → `production_operations`; "In Design" → `design`; "In
+Analysis" / "Requirements" → `requirements`.
+
+`found_in_environment` says where it surfaced — typically "Dev", "QA",
+"Pre Prod" or "Prod". It refines the phase and, more usefully, indicates
+containment: a defect found in Prod or Pre Prod that a lower environment
+should have caught is a strong `testing_gap_flag: true` signal. Found in Dev
+or QA means the process worked, so do not flag it as a testing gap on the
+strength of the environment alone.
+
+`user_impact` ("Functional: No Workaround", "Non-Functional: Accessibility",
+"User Experience: Undesirable" and similar) describes consequence, not cause.
+Use it for the summary's emphasis, never as evidence for a category.
 
 ## How to weigh the fields
 
@@ -65,9 +99,17 @@ than reading any one in isolation. In order of authority:
    `requirements_gap`, "Test gap" → `test_gap`). Override it only when the
    other fields plainly contradict it, and say so in `evidence`.
 2. **`disposition` and `state`** — how the item was actually resolved. Values
-   like Duplicate, Cannot Reproduce, As Designed, Rejected, or Won't Fix mean
-   `not_a_defect` with `not_applicable` phase, whatever the title suggests.
-   Fixed / Fixed and verified confirm it was a genuine defect.
+   like Duplicate, Cannot Reproduce, As Designed, Working as Designed,
+   Rejected, or Won't Fix mean `not_a_defect` with `not_applicable` phase,
+   whatever the title suggests. Fixed / Fixed and verified confirm it was a
+   genuine defect. "Deferred" means postponed, not invalid — classify the
+   cause normally.
+
+   Only a settled state makes the disposition trustworthy. Closed, Resolved
+   and Done are settled; New, In Progress, On Hold, Reopened and Ready for
+   Prod mean nobody has concluded the root cause yet, so lean on
+   `root_cause_raw` and the title and keep confidence at or below 0.6, since
+   the verdict can still change.
 3. **`resolution_notes`** — what was actually changed. The single best signal
    for distinguishing a coding error from a config or data problem.
 4. **`comments`** — the discussion thread, when present.
@@ -79,6 +121,14 @@ than reading any one in isolation. In order of authority:
      `coding_error`, and usually a test gap too.
    - "Prod Bug" / "UAT Bug" tell you where it escaped to, which informs
      `sdlc_phase`, not the root cause.
+   - "Requirement Clarification" points at `requirements_gap` — the team
+     recorded that the expected behaviour needed clarifying.
+   - "Known Issue", "Backlog Bug", "Non-Testable", "Downtime" describe
+     handling or scheduling, not cause. Do not classify from them; a
+     "Non-Testable" item does still argue against `test_gap`.
+   - "ShowStopper", "Low Priority" are severity or triage signals, not causes.
+   - Prefixed or team-specific tags (project codes, sign-off markers such as
+     "RegionSignedOff", tracker ids) are context only.
    - Feature or module names (module names) are context, not cause.
 6. **`title`** — always present, and usually more diagnostic than people
    assume. Read it as a symptom statement and reason to the most likely cause.
