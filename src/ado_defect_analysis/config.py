@@ -7,9 +7,13 @@ can construct a `Config` without touching `.env` at all.
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -61,6 +65,32 @@ def _groq_api_keys() -> list[str]:
     """
     raw = [*_env_list("GROQ_API_KEY", []), *_env_list("GROQ_API_KEYS", [])]
     return list(dict.fromkeys(key for key in raw if key))
+
+
+def _excel_column_map() -> dict[str, list[str]]:
+    """Extra Excel header names, as JSON in EXCEL_COLUMN_MAP.
+
+    Organisations prefix their ADO custom fields ("XX_Root Cause"), and those
+    names identify the deployment, so they belong in a gitignored .env rather
+    than in the shipped synonym table. Shape:
+    {"root_cause_raw": ["XX_Root Cause"], "user_impact": ["XX_User Impact"]}
+    """
+    raw = os.environ.get("EXCEL_COLUMN_MAP", "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        logger.warning("EXCEL_COLUMN_MAP is not valid JSON (%s); ignoring it.", exc)
+        return {}
+    if not isinstance(parsed, dict):
+        logger.warning("EXCEL_COLUMN_MAP must be a JSON object; ignoring it.")
+        return {}
+    return {
+        str(field): [str(v) for v in values]
+        for field, values in parsed.items()
+        if isinstance(values, list)
+    }
 
 
 def _env_path(name: str, default: Path) -> Path:
@@ -169,6 +199,8 @@ class Config:
     # Categorizations below this confidence are routed to the needs-review
     # export rather than being taken at face value.
     review_confidence_threshold: float = 0.6
+    # Deployment-specific Excel header names, kept out of the repository.
+    excel_column_map: dict[str, list[str]] = field(default_factory=dict)
 
     @classmethod
     def from_env(cls) -> Config:
@@ -228,5 +260,6 @@ class Config:
             output_dir=output_dir,
             rejected_resolutions=rejected_resolutions,
             borderline_resolutions=borderline_resolutions,
+            excel_column_map=_excel_column_map(),
             review_confidence_threshold=float(os.environ.get("REVIEW_CONFIDENCE_THRESHOLD", "0.6")),
         )

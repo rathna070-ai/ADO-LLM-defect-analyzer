@@ -27,6 +27,11 @@ logger = logging.getLogger(__name__)
 # Each target Defect field maps to the column headers ADO is known to export
 # it under. First match wins; matching is case-insensitive and ignores
 # surrounding whitespace.
+#
+# Only vendor-standard headers belong here. Organisations that prefix their
+# custom fields (a "XX_Root Cause" convention, say) should add those through
+# EXCEL_COLUMN_MAP rather than editing this list, so a deployment's internal
+# field naming stays out of the repository.
 _COLUMN_SYNONYMS: dict[str, list[str]] = {
     "id": ["ID", "Work Item Id", "Work Item ID", "System.Id"],
     "title": ["Title", "System.Title"],
@@ -36,7 +41,6 @@ _COLUMN_SYNONYMS: dict[str, list[str]] = {
     "severity": ["Severity", "Microsoft.VSTS.Common.Severity"],
     "state": ["State", "System.State"],
     "resolution": [
-        "XX_Disposition",
         "Disposition",
         "Resolution",
         "Resolved Reason",
@@ -45,17 +49,16 @@ _COLUMN_SYNONYMS: dict[str, list[str]] = {
         "System.Reason",
     ],
     "resolution_notes": ["History", "System.History", "Resolution Notes"],
-    "root_cause_raw": ["XX_Root Cause", "Root Cause", "Microsoft.VSTS.CMMI.RootCause"],
+    "root_cause_raw": ["Root Cause", "Microsoft.VSTS.CMMI.RootCause"],
     "sdlc_phase_raw": ["SDLC", "SDLC Phase", "Phase"],
-    "environment": ["Environment", "XX_Environment"],
+    "environment": ["Environment"],
     "found_in_environment": [
-        "XX_Found in Environment",
         "Found in Environment",
         "Found In Environment",
     ],
-    "introduced_in_month": ["XX_Introduced_In_Month", "Introduced In Month"],
-    "introduced_in_year": ["XX_Introduced_In_Year", "Introduced In Year"],
-    "user_impact": ["User Impact", "XX_User Impact"],
+    "introduced_in_month": ["Introduced In Month"],
+    "introduced_in_year": ["Introduced In Year"],
+    "user_impact": ["User Impact"],
     "parent": ["Parent", "System.Parent"],
     "work_item_type": ["Work Item Type", "System.WorkItemType"],
     "created_date": ["Created Date", "System.CreatedDate"],

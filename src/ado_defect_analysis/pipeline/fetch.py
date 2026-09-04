@@ -96,7 +96,7 @@ def run_fetch_from_excel(
     """
     store = DefectStore(config.db_path)
 
-    defects = parse_excel(file_path, column_map=column_map)
+    defects = parse_excel(file_path, column_map=column_map or config.excel_column_map)
     _stamp_source(defects, source_name or file_path.name)
     store.upsert_defects(defects)
 

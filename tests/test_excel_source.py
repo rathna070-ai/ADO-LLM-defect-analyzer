@@ -71,9 +71,10 @@ def test_parse_excel_with_raw_field_reference_headers(tmp_path: Path):
     assert defects[0].tags == "search"
 
 
-def test_parse_excel_reads_customized_prefixed_custom_columns(tmp_path: Path):
-    """Customized ADO bug templates prefix custom fields; a plain synonym
-    list would silently drop the team's own root cause and disposition."""
+def test_parse_excel_reads_prefixed_custom_columns_via_column_map(tmp_path: Path):
+    """Customized ADO templates prefix their custom fields. Those names identify
+    a deployment, so they are supplied through column_map (EXCEL_COLUMN_MAP in
+    practice) rather than shipped in the default synonym table."""
     path = _write_excel(
         tmp_path,
         [
@@ -94,7 +95,16 @@ def test_parse_excel_reads_customized_prefixed_custom_columns(tmp_path: Path):
         ],
     )
 
-    d = parse_excel(path)[0]
+    d = parse_excel(
+        path,
+        column_map={
+            "root_cause_raw": ["XX_Root Cause"],
+            "resolution": ["XX_Disposition"],
+            "found_in_environment": ["XX_Found in Environment"],
+            "introduced_in_month": ["XX_Introduced_In_Month"],
+            "introduced_in_year": ["XX_Introduced_In_Year"],
+        },
+    )[0]
 
     assert d.root_cause_raw == "Coding Error"
     assert d.resolution == "Working as Designed"
