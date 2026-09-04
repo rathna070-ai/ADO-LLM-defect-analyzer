@@ -99,7 +99,7 @@ def _render_upload(config: Config) -> None:
         uploaded = st.file_uploader(
             "Browse file", type=["xlsx", "xls", "csv"], label_visibility="collapsed"
         )
-        if st.button("Upload", disabled=uploaded is None):
+        if st.button("Upload", disabled=uploaded is None) and uploaded is not None:
             # Streamlit gives an in-memory buffer; the parser takes a path, and
             # the suffix selects the Excel vs CSV reader. The user's original
             # filename is passed separately so the batch is labelled usefully
@@ -198,7 +198,11 @@ def _render_analysis_panel(config: Config) -> None:
         queued = sum(s["total"] if rerun_analyzed else s["uncategorized"] for s in chosen)
         batch_size = config.llm.categorize_batch_size
         batches = -(-queued // batch_size) if queued else 0
-        model = config.llm.groq_model if config.llm.provider == "groq" else config.llm.copilot_model
+        model = (
+            config.llm.groq_model
+            if config.llm.provider == "groq"
+            else config.llm.azure_deployment or "(no AZURE_DEPLOYMENT set)"
+        )
         running = RUN.is_active()
 
         if running:

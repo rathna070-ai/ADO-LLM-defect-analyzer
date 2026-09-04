@@ -15,7 +15,9 @@ Form choices follow what each number's job is, not what looks impressive:
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
+from typing import Final, Literal
 
 import altair as alt
 import pandas as pd
@@ -36,7 +38,9 @@ from . import render_help_link
 # anywhere it appears is direct-labelled and backed by a table.
 _BLUE, _ORANGE, _AQUA = "#2a78d6", "#eb6834", "#1baf7a"
 #: Sequential ramp for magnitude — one hue, light to dark.
-_SEQUENTIAL = "blues"
+#: Altair's own sequential scheme name. Typed as the literal Altair expects,
+#: since the stubs enumerate valid scheme names rather than accepting any str.
+_SEQUENTIAL: Final[Literal["blues"]] = "blues"
 #: Reserved status steps, never reused for a series.
 _STATUS_GOOD, _STATUS_WARN = "#008300", "#eb6834"
 #: Commonly cited healthy band for rejected defects, as a share of total logged.
@@ -101,16 +105,22 @@ def _render_filters(df: pd.DataFrame) -> pd.DataFrame:
         iterations = ["All", *sorted(df["iteration_path"].dropna().unique().tolist())]
         iteration = col2.selectbox("Iteration path", iterations)
 
+        since: date | None = None
+        until: date | None = None
         closed = pd.to_datetime(df["closed_date"], errors="coerce")
         if closed.notna().any():
-            since, until = col3.date_input(
+            # Streamlit hands back a 1-tuple between the two clicks of a
+            # range selection, so unpacking straight into two names crashes
+            # the page the moment someone picks a start date.
+            picked = col3.date_input(
                 "Closed between",
                 value=(closed.min().date(), closed.max().date()),
                 key="date_range",
-            ) or (None, None)
+            )
+            if isinstance(picked, (tuple, list)) and len(picked) == 2:
+                since, until = picked
         else:
             col3.caption("No closed dates to filter on.")
-            since = until = None
 
     if area != "All":
         df = df[df["module"] == area]

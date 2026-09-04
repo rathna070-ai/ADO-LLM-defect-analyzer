@@ -5,9 +5,14 @@ leadership dashboard. Which one renders is driven by the `view` query
 parameter, so the dashboard has a real URL of its own and can be opened in a
 new browser tab, bookmarked, or shared with someone who only wants the result.
 
-Needs the package installed (`pip install -e ".[dashboard]"`), then:
+Launch it through the CLI, which resolves this file inside the installed
+package so it works from a wheel as well as a checkout:
 
-    streamlit run dashboard/streamlit_app.py
+    ado-defect-analysis dashboard
+
+Or point Streamlit at this file directly, if you have the source tree:
+
+    streamlit run src/ado_defect_analysis/dashboard/streamlit_app.py
 """
 
 from __future__ import annotations
@@ -21,8 +26,9 @@ import streamlit as st
 # only importable once its directory is on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from ado_defect_analysis.config import Config
 from views import home, results
+
+from ado_defect_analysis.config import Config
 
 _DASHBOARD_VIEW = "dashboard"
 

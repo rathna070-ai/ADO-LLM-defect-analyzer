@@ -1,0 +1,9 @@
+# Line endings matter for the launchers: a run.sh checked out with CRLF fails
+# on Linux and macOS with "bad interpreter: /usr/bin/env bash^M", and cmd.exe
+# wants CRLF in a .bat. Pin both rather than leaving it to core.autocrlf.
+*.sh text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Everything else is normalised to LF in the repo and checked out natively.
+* text=auto

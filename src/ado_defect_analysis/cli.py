@@ -6,6 +6,7 @@ import argparse
 import getpass
 import json
 import logging
+import subprocess
 import sys
 from pathlib import Path
 
@@ -70,6 +71,17 @@ def _build_parser() -> argparse.ArgumentParser:
     for date_scoped in (report_parser, export_parser):
         _add_date_window_args(date_scoped)
 
+    dashboard_parser = subparsers.add_parser(
+        "dashboard",
+        help="Launch the Streamlit UI (upload defects, run the analysis, view the dashboard).",
+    )
+    dashboard_parser.add_argument(
+        "--port", type=int, default=8501, help="Port to serve on (default 8501)."
+    )
+    dashboard_parser.add_argument(
+        "--no-browser", action="store_true", help="Don't open a browser window on start."
+    )
+
     secrets_parser = subparsers.add_parser(
         "secrets",
         help="Store credentials in the OS credential store instead of a plaintext .env.",
@@ -111,6 +123,42 @@ def _add_date_window_args(parser: argparse.ArgumentParser) -> None:
         metavar="YYYY-MM-DD",
         help="Only include defects closed on or before this date (inclusive).",
     )
+
+
+def _run_dashboard(args: argparse.Namespace) -> int:
+    """Hand the packaged Streamlit script to the `streamlit` CLI.
+
+    Streamlit has no supported in-process API for serving a script, so this
+    shells out the way its own docs do. Resolving the path through the
+    installed package (rather than a path relative to the repo) is what makes
+    this work from a wheel on a machine that never saw the source tree.
+    """
+    from .dashboard import APP_PATH
+
+    if not APP_PATH.exists():  # pragma: no cover - only if the wheel is malformed
+        print(f"Dashboard files are missing from the installation: {APP_PATH}")
+        return 1
+
+    command = [
+        sys.executable,
+        "-m",
+        "streamlit",
+        "run",
+        str(APP_PATH),
+        "--server.port",
+        str(args.port),
+    ]
+    if args.no_browser:
+        command += ["--server.headless", "true"]
+
+    try:
+        return subprocess.call(command)
+    except FileNotFoundError:
+        print(
+            "Streamlit is not installed. Install the dashboard extra:\n"
+            '    pip install "ado-defect-analysis[dashboard]"'
+        )
+        return 1
 
 
 def _run_secrets(args: argparse.Namespace) -> int:
@@ -160,6 +208,8 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "categorize":
         count = run_categorize(config, recategorize_all=args.recategorize_all, force=args.force)
         print(f"Categorized {count} defects.")
+    elif args.command == "dashboard":
+        return _run_dashboard(args)
     elif args.command == "secrets":
         return _run_secrets(args)
     elif args.command == "report":

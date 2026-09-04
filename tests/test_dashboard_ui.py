@@ -16,7 +16,13 @@ from streamlit.testing.v1 import AppTest
 from ado_defect_analysis.models import Defect, DefectCategorization
 from ado_defect_analysis.storage import DefectStore
 
-APP = str(Path(__file__).resolve().parent.parent / "dashboard" / "streamlit_app.py")
+APP = str(
+    Path(__file__).resolve().parent.parent
+    / "src"
+    / "ado_defect_analysis"
+    / "dashboard"
+    / "streamlit_app.py"
+)
 
 
 def _seed(db_path: Path, analyzed: bool = True) -> None:

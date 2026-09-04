@@ -13,6 +13,23 @@ current status.
 
 ## Setup
 
+### Quickest start
+
+Download or clone the repo, then run the launcher for your OS. It creates a
+virtual environment, installs everything, and opens the dashboard — first run
+takes a minute, later runs are instant.
+
+```bash
+./run.sh          # macOS / Linux
+```
+```
+run.bat           # Windows (double-click also works)
+```
+
+Python 3.10+ has to be on PATH; the scripts say so plainly if it isn't.
+
+### Manual setup
+
 ```bash
 git clone https://github.com/rathna070-ai/ADO-LLM-defect-analyzer.git
 cd ADO-LLM-defect-analyzer
@@ -67,7 +84,7 @@ ado-defect-analysis report
 ado-defect-analysis export
 
 # optional standalone dashboard
-streamlit run dashboard/streamlit_app.py
+ado-defect-analysis dashboard              # add --port 8502 / --no-browser as needed
 ```
 
 `python -m ado_defect_analysis <command>` works identically if you'd rather not
@@ -193,6 +210,33 @@ Both providers are thin subclasses of `llm/openai_compatible.py`, which holds th
 shared request/JSON-mode/error/usage handling — adding another OpenAI-compatible
 backend is roughly ten lines.
 
+## Deploying it somewhere else
+
+The wheel is self-contained — prompts, schemas, and the whole Streamlit UI
+ship inside it — so a target machine never needs the source tree.
+
+```bash
+# build (from a checkout)
+pip install build
+python -m build                 # -> dist/ado_defect_analysis-<version>-py3-none-any.whl
+
+# install anywhere with Python 3.10+
+pip install "ado_defect_analysis-0.2.0-py3-none-any.whl[dashboard,secrets]"
+
+# then, from any directory
+ado-defect-analysis secrets set GROQ_API_KEY
+ado-defect-analysis dashboard
+```
+
+`ado-defect-analysis dashboard` resolves the app through the installed package
+rather than a relative path, which is what makes it work from a wheel. Data
+and exports land under the working directory you launch it from (`DEFECT_DB_PATH`
+and `DEFECT_OUTPUT_DIR` override that).
+
+On Windows, enable [long path support](https://pip.pypa.io/warnings/enable-long-paths)
+if you install into a deeply nested directory — some dependencies ship paths
+that exceed the legacy 260-character limit.
+
 ## Repository layout
 
 ```
@@ -219,7 +263,11 @@ src/ado_defect_analysis/
     report.py                Phase 3b — LLM narrative summary
     export.py                 Phase 4 — CSV/Excel for Power BI + needs-review triage
   cli.py                       Entrypoint: fetch / categorize / report / export / run-all
-dashboard/streamlit_app.py     Phase 5 — optional standalone dashboard
+  dashboard/            Phase 5 — Streamlit UI, shipped inside the package
+    streamlit_app.py      Router: setup page vs leadership dashboard
+    views/home.py          Upload/query, batch selection, run progress
+    views/results.py        KPIs, meters, top-5 tables with CAPA actions
+run.sh / run.bat        One-command launcher (venv + install + start)
 tests/                          pytest suite, all offline
 docs/PHASE-PLAN.md              Phase-by-phase plan and status
 .github/workflows/ci.yml        Lint, format, type-check, and test on 3.10-3.12

@@ -61,7 +61,7 @@ ado_defect_analysis = ["prompts/*.md", "schemas/*.json", "py.typed"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-src = ["src", "tests", "dashboard"]
+src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
@@ -69,10 +69,10 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 [tool.ruff.lint.per-file-ignores]
 # The dashboard's section headings use a real "×" for cross-tabs; the
 # homoglyph rule is aimed at identifiers, not display copy.
-"dashboard/views/results.py" = ["RUF001"]
+"src/ado_defect_analysis/dashboard/views/results.py" = ["RUF001"]
 # Streamlit runs this as a script, so the sys.path setup must precede the
 # imports it enables.
-"dashboard/streamlit_app.py" = ["E402", "RUF001"]
+"src/ado_defect_analysis/dashboard/streamlit_app.py" = ["E402", "RUF001"]
 
 [tool.mypy]
 python_version = "3.10"
