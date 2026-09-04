@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from ..config import LlmConfig
+from .azure_provider import AzureFoundryProvider
 from .base import LlmProvider, LlmProviderError
-from .copilot_provider import CopilotProvider
 from .groq_provider import GroqProvider
 
 
@@ -41,17 +41,23 @@ def get_llm_provider(llm_config: LlmConfig) -> LlmProvider:
             timeout_seconds=llm_config.request_timeout_seconds,
             reasoning_effort=llm_config.reasoning_effort,
         )
-    if provider == "copilot":
-        return CopilotProvider(
-            api_key=llm_config.copilot_api_key,
-            model=llm_config.copilot_model,
-            base_url=llm_config.copilot_base_url,
+    if provider == "azure":
+        return AzureFoundryProvider(
+            api_key=llm_config.azure_api_key,
+            model=llm_config.azure_deployment,
+            base_url=llm_config.azure_base_url,
             timeout_seconds=llm_config.request_timeout_seconds,
-            # LLM_REASONING_EFFORT is deliberately not forwarded here: it's
-            # tuned for Groq's gpt-oss default, and sending it to a
-            # non-reasoning model like the gpt-4o-mini default is a 400. Pass
-            # it explicitly if you point COPILOT_MODEL at an o-series model.
+            # LLM_REASONING_EFFORT is deliberately not forwarded: it is tuned
+            # for Groq's gpt-oss default, and a non-reasoning deployment
+            # rejects the parameter outright. Pass it explicitly if you point
+            # AZURE_DEPLOYMENT at an o-series model.
         )
-    raise LlmProviderError(
-        f"Unknown LLM_PROVIDER '{provider}'. Supported values: 'groq', 'copilot'."
-    )
+    if provider == "copilot":
+        # Recognised only to give anyone with the old value an actionable
+        # message instead of a 404 from a host that no longer answers.
+        raise LlmProviderError(
+            "LLM_PROVIDER=copilot referred to GitHub Models, which was retired on "
+            "30 July 2026. Use LLM_PROVIDER=azure with AZURE_API_KEY, AZURE_BASE_URL "
+            "and AZURE_DEPLOYMENT instead."
+        )
+    raise LlmProviderError(f"Unknown LLM_PROVIDER '{provider}'. Supported values: 'groq', 'azure'.")

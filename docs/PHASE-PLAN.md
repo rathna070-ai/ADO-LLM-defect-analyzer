@@ -5,9 +5,9 @@ Status of each phase reflects what's in this scaffold today, not a future promis
 ## Phase 0 — Scaffold (done)
 
 - Project structure, config loading (`.env` + env vars), SQLite storage schema.
-- `LlmProvider` abstraction with a working `GroqProvider` and a `CopilotProvider`
+- `LlmProvider` abstraction with a working `GroqProvider` and a second provider
   placeholder, selected by `LLM_PROVIDER` — this is the future-proofing seam:
-  moving to Copilot later means implementing one class, not touching pipeline code.
+  swapping backends later means implementing one class, not touching pipeline code.
 - Unit tests for storage, models, the LLM factory, and the Groq HTTP layer (mocked).
 
 ## Phase 1 — Get defects in: ADO API or Excel export
@@ -126,23 +126,29 @@ upserting by id so re-running fetch — from either source — is safe.
   own batches so they share context; `fixed` (the default) keeps prompt length
   predictable.
 
-## Phase 8 — GitHub Models provider (done)
+## Phase 8 — Second provider: GitHub Models, then Azure AI Foundry (done)
 
-- `llm/copilot_provider.py` is a real provider now, not a placeholder: GitHub Models
-  speaks the OpenAI chat-completions dialect, so the request shape, JSON mode, error
-  wrapping, and usage accounting are shared with Groq via
-  `llm/openai_compatible.py`. Each provider is a ~10-line subclass supplying its
-  endpoint and error wording.
-- Auth is a GitHub PAT with the `models:read` scope (`GITHUB_TOKEN` inside Actions).
-  `COPILOT_MODEL` takes publisher-qualified ids (default `openai/gpt-4o-mini`), and
-  `COPILOT_BASE_URL` is overridable because GitHub has moved this surface before.
-- `LLM_REASONING_EFFORT` is deliberately not forwarded to this provider — it's tuned
-  for Groq's gpt-oss default, and a non-reasoning model rejects it outright.
-- The seam held: switching providers is still config-only, and no pipeline stage
-  changed.
-- **Not yet run against the live endpoint** — there was no token available when it
-  was written. The contract is covered by mocked tests; the first real run is the
-  verification step.
+- Implemented first against **GitHub Models**, which spoke the OpenAI
+  chat-completions dialect. The shared transport in `llm/openai_compatible.py`
+  came out of that work: request shape, JSON mode, error wrapping and usage
+  accounting live there, so each backend is a ~10-line subclass supplying an
+  endpoint and its error wording.
+- **GitHub Models was retired on 30 July 2026**, taking that endpoint with it, so
+  the provider never ran against it live. GitHub's own notice points to Azure AI
+  Foundry, and Copilot itself is an IDE assistant with no general inference API,
+  so it was never a candidate to back this pipeline.
+- Replaced by `llm/azure_provider.py` (`LLM_PROVIDER=azure`). Foundry is
+  OpenAI-compatible over bearer auth, so the swap needed no new transport — only
+  the endpoint, the deployment-name-as-model convention, and a required
+  `AZURE_BASE_URL` with no default, since the endpoint belongs to your resource.
+- `LLM_PROVIDER=copilot` still resolves, but only to raise a message explaining
+  the retirement and pointing at `azure` — a pointed error beats a 404 from a
+  host that no longer answers.
+- The abstraction held: two backend changes, and no pipeline stage was touched.
+- **Not yet exercised against a live Foundry resource.** Mocked tests cover the
+  contract; the first real run should confirm the deployment accepts
+  `response_format: json_object` and whether it wants `max_completion_tokens`
+  rather than `max_tokens`.
 
 ## Remaining
 
@@ -152,4 +158,4 @@ code:
 - The pipeline has never been run on real defects — every test uses a fake provider
   or mocked HTTP, so field mappings, prompt accuracy, and the dashboard are
   unvalidated against actual ADO data.
-- The GitHub Models provider needs one live run to confirm the endpoint contract.
+- The Azure AI Foundry provider needs one live run to confirm the endpoint contract.

@@ -135,25 +135,37 @@ to run the suite. CI runs the same four commands on Python 3.10–3.12.
 `pre-commit install` wires ruff into your commit hook if you want the formatting
 enforced locally.
 
-## LLM provider: Groq today, Copilot as a placeholder
+## LLM provider: Groq or Azure AI Foundry
 
 `LLM_PROVIDER` in `.env` picks the backend. Every pipeline stage codes against the
-`LlmProvider` interface (`src/ado_defect_analysis/llm/base.py`) — it never imports
-Groq or Copilot directly — so switching providers is a config change:
+`LlmProvider` interface (`src/ado_defect_analysis/llm/base.py`) and never imports a
+vendor directly, so switching is a config change:
 
-- `LLM_PROVIDER=groq` (default) — calls Groq's OpenAI-compatible chat completions
-  API. Needs `GROQ_API_KEY`. Defaults to `openai/gpt-oss-120b` at low reasoning
-  effort.
-- `LLM_PROVIDER=copilot` — GitHub Models. Needs `COPILOT_API_KEY` (a GitHub PAT with
-  the `models:read` scope; `GITHUB_TOKEN` works inside Actions) and a
-  publisher-qualified `COPILOT_MODEL` such as `openai/gpt-4o-mini`.
-  `COPILOT_BASE_URL` is overridable since GitHub has moved this endpoint before.
-  *Not yet exercised against the live endpoint — the contract is covered by mocked
-  tests, so treat your first real run as the verification step.*
+- `LLM_PROVIDER=groq` (default) — Groq's OpenAI-compatible chat completions API.
+  Needs `GROQ_API_KEY`, defaults to `openai/gpt-oss-120b` at low reasoning effort.
+  `GROQ_API_KEY` accepts a comma-separated list, though note Groq enforces its
+  rate limit **per organization**, so extra keys from the same account add no
+  throughput.
+- `LLM_PROVIDER=azure` — Azure AI Foundry. Needs `AZURE_API_KEY`,
+  `AZURE_BASE_URL` (`https://<your-resource>.openai.azure.com/openai/v1`) and
+  `AZURE_DEPLOYMENT`. Two things differ from Groq: the deployment *name* goes in
+  `AZURE_DEPLOYMENT` rather than a publisher-qualified model id, and there is no
+  default base URL because the endpoint belongs to your resource. Foundry quota is
+  set per deployment, which is the reason to move if a free tier's daily token cap
+  is the constraint.
+  *Not yet exercised against a live resource — the contract is covered by mocked
+  tests, so treat your first real run as the verification step. Two things to
+  confirm then: whether the deployment accepts `response_format: json_object`, and
+  whether it wants `max_completion_tokens` instead of `max_tokens` (o-series does).*
 
-Both are thin subclasses of `llm/openai_compatible.py`, which holds the shared
-request/JSON-mode/error/usage handling — adding a third OpenAI-compatible backend
-is roughly ten lines.
+`LLM_PROVIDER=copilot` used to mean GitHub Models. That surface was **retired on
+30 July 2026**; the value is still recognised, but only to raise a message
+pointing at `azure` rather than failing with a 404. GitHub Copilot itself is an
+IDE assistant with no general inference API, so it cannot back this pipeline.
+
+Both providers are thin subclasses of `llm/openai_compatible.py`, which holds the
+shared request/JSON-mode/error/usage handling — adding another OpenAI-compatible
+backend is roughly ten lines.
 
 ## Repository layout
 
@@ -170,7 +182,7 @@ src/ado_defect_analysis/
     base.py             LlmProvider interface + token accounting
     openai_compatible.py  Shared transport for OpenAI-dialect APIs
     groq_provider.py       Groq endpoint/wording
-    copilot_provider.py     GitHub Models endpoint/wording
+    azure_provider.py       Azure AI Foundry endpoint/wording
     factory.py               LLM_PROVIDER -> LlmProvider
   prompts/               Markdown prompt templates
   schemas/                Expected JSON response shapes

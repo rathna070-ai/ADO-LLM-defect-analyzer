@@ -106,9 +106,12 @@ class LlmConfig:
     groq_api_keys: list[str] = field(default_factory=list)
     groq_model: str = "openai/gpt-oss-120b"
     groq_base_url: str = "https://api.groq.com/openai/v1"
-    copilot_api_key: str = ""
-    copilot_model: str = "openai/gpt-4o-mini"
-    copilot_base_url: str = "https://models.github.ai/inference"
+    azure_api_key: str = ""
+    # The deployment name chosen in Foundry, not a publisher-qualified
+    # model id. No default base URL: it is specific to your resource, so a
+    # guess would only ever produce a confusing 404.
+    azure_deployment: str = ""
+    azure_base_url: str = ""
     # Generous because a reasoning model with a long prompt can spend a while
     # on internal reasoning before the first output token; too short and the
     # request is retried from scratch, which is strictly worse than waiting.
@@ -198,11 +201,9 @@ class Config:
             groq_api_keys=_groq_api_keys(),
             groq_model=os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b"),
             groq_base_url=os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
-            copilot_api_key=os.environ.get("COPILOT_API_KEY", ""),
-            copilot_model=os.environ.get("COPILOT_MODEL", "openai/gpt-4o-mini"),
-            copilot_base_url=os.environ.get(
-                "COPILOT_BASE_URL", "https://models.github.ai/inference"
-            ),
+            azure_api_key=os.environ.get("AZURE_API_KEY", ""),
+            azure_deployment=os.environ.get("AZURE_DEPLOYMENT", ""),
+            azure_base_url=os.environ.get("AZURE_BASE_URL", ""),
             request_timeout_seconds=_env_int("LLM_REQUEST_TIMEOUT_SECONDS", 60),
             temperature=float(os.environ.get("LLM_TEMPERATURE", "0.0")),
             max_tokens=_env_int("LLM_MAX_TOKENS", 5120),
