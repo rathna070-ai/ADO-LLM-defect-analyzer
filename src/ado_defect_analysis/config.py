@@ -235,10 +235,14 @@ class Config:
             fetch_comments=os.environ.get("ADO_FETCH_COMMENTS", "false").lower() == "true",
             request_timeout_seconds=_env_int("ADO_REQUEST_TIMEOUT_SECONDS", 30),
         )
+        # GROQ_API_KEY accepts a comma-separated list, so the raw value is not
+        # itself usable as a bearer token — the singular field has to be the
+        # first parsed key or every single-provider call 401s.
+        groq_keys = _groq_api_keys()
         llm = LlmConfig(
             provider=os.environ.get("LLM_PROVIDER", "groq").lower(),
-            groq_api_key=get_secret("GROQ_API_KEY"),
-            groq_api_keys=_groq_api_keys(),
+            groq_api_key=groq_keys[0] if groq_keys else "",
+            groq_api_keys=groq_keys,
             groq_model=os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b"),
             groq_base_url=os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
             azure_api_key=get_secret("AZURE_API_KEY"),

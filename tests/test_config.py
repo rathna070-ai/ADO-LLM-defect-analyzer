@@ -52,3 +52,14 @@ def test_rejected_resolutions_override(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("REJECTED_RESOLUTIONS", "Duplicate, Not a Bug")
 
     assert Config.from_env().rejected_resolutions == ["Duplicate", "Not a Bug"]
+
+
+def test_a_comma_separated_groq_key_yields_a_usable_primary(monkeypatch: pytest.MonkeyPatch):
+    """The raw env value is a list, not a token — sending it whole is a 401."""
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_first, gsk_second")
+    monkeypatch.delenv("GROQ_API_KEYS", raising=False)
+
+    config = Config.from_env()
+
+    assert config.llm.groq_api_key == "gsk_first"
+    assert config.llm.groq_api_keys == ["gsk_first", "gsk_second"]
