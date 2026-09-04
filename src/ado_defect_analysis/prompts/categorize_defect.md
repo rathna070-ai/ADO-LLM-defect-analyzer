@@ -127,9 +127,9 @@ than reading any one in isolation. In order of authority:
      handling or scheduling, not cause. Do not classify from them; a
      "Non-Testable" item does still argue against `test_gap`.
    - "ShowStopper", "Low Priority" are severity or triage signals, not causes.
-   - Prefixed or team-specific tags (project codes, sign-off markers such as
-     "RegionSignedOff", tracker ids) are context only.
-   - Feature or module names (module names) are context, not cause.
+   - Prefixed or team-specific tags (project codes, region or sign-off
+     markers, tracker ids) are context only.
+   - Feature or module names are context, not cause.
 6. **`title`** — always present, and usually more diagnostic than people
    assume. Read it as a symptom statement and reason to the most likely cause.
 
