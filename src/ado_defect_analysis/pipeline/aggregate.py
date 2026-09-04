@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from ..capa import actions_for
+from ..capa import actions_for, quality_bucket
 from ..config import (
     DEFAULT_BORDERLINE_RESOLUTIONS,
     DEFAULT_REJECTED_RESOLUTIONS,
@@ -108,6 +108,7 @@ def build_aggregates(
             "escape_rate": 0.0,
             "top_rca_contributors": [],
             "top_area_contributors": [],
+            "quality_split": quality_split(df),
         }
 
     rejected_resolutions = rejected_resolutions or DEFAULT_REJECTED_RESOLUTIONS
@@ -206,6 +207,7 @@ def build_aggregates(
         "severity_mix": _severity_mix(df),
         "escape_rate": _escape_rate(df),
         "top_rca_contributors": top_rca_contributors(df),
+        "quality_split": quality_split(df),
         "top_area_contributors": top_area_contributors(
             df,
             rejected_resolutions=rejected_resolutions,
@@ -317,6 +319,57 @@ def top_area_contributors(
             }
         )
     return rows
+
+
+def quality_split(df: pd.DataFrame) -> dict:
+    """Split defects into engineering-quality vs process causes.
+
+    The question leadership asks after seeing the category list: is this our
+    code, or how we work? `coding_error` is the code; everything else is a
+    process control that did not hold.
+
+    `not_a_defect` and `unknown` are reported separately rather than folded
+    into either bucket. A duplicate or a works-as-designed item says nothing
+    about the process, and an unclassified one says nothing at all — counting
+    them as process failures would inflate a number leadership acts on. Shares
+    are therefore of *classified* defects, not of everything logged.
+    """
+    if df.empty:
+        return {
+            "dev_quality": {"count": 0, "share": 0.0, "categories": {}},
+            "process_error": {"count": 0, "share": 0.0, "categories": {}},
+            "unattributed": {"count": 0, "categories": {}},
+            "classified_total": 0,
+        }
+
+    buckets: dict[str, dict[str, int]] = {
+        "dev_quality": {},
+        "process_error": {},
+        "unattributed": {},
+    }
+    for category, count in df["root_cause_category"].value_counts().items():
+        buckets[quality_bucket(str(category))][str(category)] = int(count)
+
+    dev = sum(buckets["dev_quality"].values())
+    proc = sum(buckets["process_error"].values())
+    classified = dev + proc
+    return {
+        "dev_quality": {
+            "count": dev,
+            "share": round(dev / classified, 4) if classified else 0.0,
+            "categories": buckets["dev_quality"],
+        },
+        "process_error": {
+            "count": proc,
+            "share": round(proc / classified, 4) if classified else 0.0,
+            "categories": buckets["process_error"],
+        },
+        "unattributed": {
+            "count": sum(buckets["unattributed"].values()),
+            "categories": buckets["unattributed"],
+        },
+        "classified_total": classified,
+    }
 
 
 def _pareto(distribution: dict[str, int]) -> list[dict]:

@@ -98,3 +98,24 @@ _FALLBACK = Capa(
 def actions_for(category: str) -> Capa:
     """CAPA for a root-cause category, with a safe fallback for unknown values."""
     return _ACTIONS.get(category, _FALLBACK)
+
+
+#: Root causes attributable to how the code itself was written — the
+#: engineering-quality bucket leadership reads as "our developers' output".
+DEV_QUALITY_CATEGORIES = frozenset({"coding_error"})
+
+#: Neither a code-quality nor a process signal, so counted in neither bucket.
+#: `not_a_defect` was never a defect (duplicate, works as designed) and
+#: `unknown` is unclassified — folding either into "process error" would
+#: inflate a number leadership acts on with items that say nothing about the
+#: process.
+UNATTRIBUTED_CATEGORIES = frozenset({"not_a_defect", "unknown"})
+
+
+def quality_bucket(category: str) -> str:
+    """ "dev_quality", "process_error", or "unattributed" for a category."""
+    if category in DEV_QUALITY_CATEGORIES:
+        return "dev_quality"
+    if category in UNATTRIBUTED_CATEGORIES:
+        return "unattributed"
+    return "process_error"

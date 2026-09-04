@@ -58,6 +58,7 @@ def render(config: Config) -> None:
     _render_kpis(agg)
     _render_data_quality(agg, config)
     st.divider()
+    _render_quality_split(agg)
     _render_top_rca(agg)
     _render_top_areas(agg)
     st.divider()
@@ -119,6 +120,58 @@ def _render_kpis(agg: dict) -> None:
             f"Rejection rate {_pct(rejection_rate)} of total logged, within the "
             f"{_pct(low)}-{_pct(high)} band commonly cited as healthy. Substitute your own "
             "internal benchmark if you have one."
+        )
+
+
+def _render_quality_split(agg: dict) -> None:
+    """Is this our code, or how we work? The first cut leadership wants."""
+    st.subheader("Development quality vs process")
+    split = agg.get("quality_split") or {}
+    classified = split.get("classified_total", 0)
+    if not classified:
+        st.info("Not enough classified data yet.")
+        return
+
+    dev, proc = split["dev_quality"], split["process_error"]
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Bucket": "Development quality",
+                    "Defects": dev["count"],
+                    "% of classified": _pct(dev["share"]),
+                    "Root causes included": ", ".join(
+                        f"{_title(c)} ({n})" for c, n in dev["categories"].items()
+                    )
+                    or "—",
+                    "Where to act": "Code review depth, unit-test coverage, static analysis.",
+                },
+                {
+                    "Bucket": "Process",
+                    "Defects": proc["count"],
+                    "% of classified": _pct(proc["share"]),
+                    "Root causes included": ", ".join(
+                        f"{_title(c)} ({n})" for c, n in proc["categories"].items()
+                    )
+                    or "—",
+                    "Where to act": (
+                        "Requirements, design, test design, config and release controls."
+                    ),
+                },
+            ]
+        ),
+        width="stretch",
+        hide_index=True,
+    )
+
+    unattributed = split.get("unattributed", {})
+    if unattributed.get("count"):
+        detail = ", ".join(f"{_title(c)} ({n})" for c, n in unattributed["categories"].items())
+        st.caption(
+            f"Excluded from both buckets: {unattributed['count']} defect(s) — {detail}. "
+            "A duplicate or works-as-designed item says nothing about the process, and an "
+            "unclassified one says nothing at all, so counting them as process failures "
+            "would overstate it. Percentages above are of classified defects only."
         )
 
 

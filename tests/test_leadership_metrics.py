@@ -8,6 +8,7 @@ import pytest
 from ado_defect_analysis.capa import actions_for
 from ado_defect_analysis.pipeline.aggregate import (
     build_aggregates,
+    quality_split,
     top_area_contributors,
     top_rca_contributors,
 )
@@ -158,3 +159,44 @@ def test_an_unmapped_category_still_gets_a_usable_action():
 
     assert capa.corrective and capa.preventive
     assert capa.priority is False
+
+
+def test_quality_split_puts_coding_errors_in_dev_and_the_rest_in_process():
+    split = build_aggregates(_df())["quality_split"]
+
+    assert split["dev_quality"]["count"] == 6
+    assert set(split["dev_quality"]["categories"]) == {"coding_error"}
+    # requirements_gap and security_defect are process-side.
+    assert split["process_error"]["count"] == 4
+    assert set(split["process_error"]["categories"]) == {"requirements_gap", "security_defect"}
+
+
+def test_shares_are_of_classified_defects_only():
+    """not_a_defect and unknown must not dilute or inflate either bucket."""
+    df = pd.DataFrame(
+        {"root_cause_category": ["coding_error"] * 3 + ["test_gap"] + ["unknown"] * 6}
+    )
+
+    split = quality_split(df)
+
+    assert split["classified_total"] == 4
+    assert split["dev_quality"]["share"] == pytest.approx(0.75)
+    assert split["process_error"]["share"] == pytest.approx(0.25)
+    assert split["unattributed"]["count"] == 6
+
+
+def test_unclassified_and_invalid_are_excluded_from_both_buckets():
+    """Counting a duplicate as a process failure would misinform leadership."""
+    df = pd.DataFrame({"root_cause_category": ["not_a_defect", "unknown", "coding_error"]})
+
+    split = quality_split(df)
+
+    assert split["process_error"]["count"] == 0
+    assert split["unattributed"]["categories"] == {"not_a_defect": 1, "unknown": 1}
+
+
+def test_quality_split_is_safe_on_an_empty_frame():
+    split = quality_split(pd.DataFrame())
+
+    assert split["classified_total"] == 0
+    assert split["dev_quality"]["share"] == 0.0
