@@ -139,7 +139,8 @@ def test_dashboard_renders_every_section(app: Path):
     _seed(app / "ui.db")
     at = _run(app)
 
-    next(b for b in at.button if b.label == "View dashboard").click().run()
+    at.session_state["page"] = "dashboard"
+    at.run()
 
     assert not at.exception
     headings = [s.value for s in at.subheader]
@@ -150,16 +151,32 @@ def test_dashboard_renders_every_section(app: Path):
         "Export",
     ):
         assert any(expected in h for h in headings), f"missing section: {expected}"
-    # The KPI row leadership reads first.
+    # Headline counts are stat tiles...
     assert {m.label for m in at.metric} >= {
         "Total logged",
         "Valid defects",
         "Rejected",
         "Borderline",
-        "Testing-gap rate",
-        "Late-phase escapes",
-        "Critical / high severity",
     }
+    # ...while the rates are meters, since each is a ratio against a limit
+    # rather than a standalone count.
+    meters = " ".join(m.value for m in at.markdown)
+    for rate in ("Rejection rate", "Testing-gap rate", "Late-phase escapes", "Critical / high"):
+        assert rate in meters, f"missing meter: {rate}"
+
+
+def test_the_rejection_meter_draws_the_benchmark_band(app: Path):
+    """The benchmark is the point of the meter — a bare percentage doesn't
+    tell a reader whether it is good."""
+    _seed(app / "ui.db")
+    at = _run(app)
+
+    at.session_state["page"] = "dashboard"
+    at.run()
+
+    meters = " ".join(m.value for m in at.markdown)
+    assert "commonly cited as healthy" in meters
+    assert "#008300" in meters  # the band's status-green edges
 
 
 def test_dashboard_shows_corrective_actions_in_both_top_five_tables(app: Path):
@@ -167,7 +184,8 @@ def test_dashboard_shows_corrective_actions_in_both_top_five_tables(app: Path):
     _seed(app / "ui.db")
     at = _run(app)
 
-    next(b for b in at.button if b.label == "View dashboard").click().run()
+    at.session_state["page"] = "dashboard"
+    at.run()
 
     assert not at.exception
     columns = {c for frame in at.dataframe for c in frame.value.columns}
@@ -189,7 +207,8 @@ def test_dashboard_guides_the_user_back_when_nothing_is_analyzed(app: Path):
 def test_export_button_produces_downloadable_files(app: Path):
     _seed(app / "ui.db")
     at = _run(app)
-    next(b for b in at.button if b.label == "View dashboard").click().run()
+    at.session_state["page"] = "dashboard"
+    at.run()
 
     next(b for b in at.button if b.label == "Generate export files").click().run()
 

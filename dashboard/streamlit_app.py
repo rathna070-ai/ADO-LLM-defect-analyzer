@@ -1,9 +1,9 @@
 """Standalone Streamlit app for the defect-analysis pipeline.
 
-Two pages behind a session-state router: setup (choose a data source, load
-defects, run the analysis) and results (charts + export). Routing is explicit
-rather than using Streamlit's `pages/` directory because the flow is ordered —
-there's nothing to show on the results page until an analysis has run.
+Two pages: setup (choose a data source, load defects, run the analysis) and the
+leadership dashboard. Which one renders is driven by the `view` query
+parameter, so the dashboard has a real URL of its own and can be opened in a
+new browser tab, bookmarked, or shared with someone who only wants the result.
 
 Needs the package installed (`pip install -e ".[dashboard]"`), then:
 
@@ -24,15 +24,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ado_defect_analysis.config import Config
 from views import home, results
 
-st.set_page_config(page_title="ADO Defect Analysis", page_icon="🔎", layout="wide")
+_DASHBOARD_VIEW = "dashboard"
 
+# The query parameter is the source of truth so a bookmarked or newly-opened
+# tab lands on the right page; session_state only mirrors it for in-page
+# navigation.
+_view = st.query_params.get("view") or st.session_state.get("page", "home")
+
+st.set_page_config(
+    page_title=(
+        "Defect RCA — leadership summary" if _view == _DASHBOARD_VIEW else "AI RCA Analyzer"
+    ),
+    page_icon="🔎",
+    layout="wide",
+)
 
 # Deliberately not cached: reading .env is cheap, and caching it means an
 # edited setting is ignored until the server restarts.
 config = Config.from_env()
 
-page = st.session_state.setdefault("page", "home")
-if page == "dashboard":
+if _view == _DASHBOARD_VIEW:
     results.render(config)
 else:
     home.render(config)

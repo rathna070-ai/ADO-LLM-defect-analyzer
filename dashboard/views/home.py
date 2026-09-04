@@ -223,9 +223,18 @@ def _render_analysis_panel(config: Config) -> None:
 
     _render_run_progress()
 
-    if processed and not RUN.is_active() and st.button("View dashboard"):
-        st.session_state["page"] = "dashboard"
-        st.rerun()
+    if processed and not RUN.is_active():
+        # A real anchor with target="_blank" rather than a button: the
+        # dashboard has its own URL, so it opens in a new tab and the setup
+        # page keeps its state (selections, upload list) behind it.
+        st.markdown(
+            '<a href="?view=dashboard" target="_blank" rel="noopener" '
+            'style="display:inline-block;padding:.5rem 1rem;border-radius:.5rem;'
+            'background:#2a78d6;color:#fff;text-decoration:none;font-weight:600">'
+            "View dashboard ↗</a>",
+            unsafe_allow_html=True,
+        )
+        st.caption("Opens in a new tab.")
 
 
 @st.fragment(run_every=2)
@@ -245,6 +254,15 @@ def _render_run_progress() -> None:
         return
 
     if not status.active:
+        # A fragment reruns only itself, so the panel above — its counts and the
+        # dashboard link, both read from the database during the main script run
+        # — would still show pre-run values until something else triggered a full
+        # rerun. That is why the results used to appear only after pressing
+        # Start. Refresh the whole app once, on the transition to finished.
+        if st.session_state.get("last_finished_at") != status.finished_at:
+            st.session_state["last_finished_at"] = status.finished_at
+            st.rerun(scope="app")
+
         analyzed = status.result_count if status.result_count is not None else status.defects_done
         message = f"Analyzed {analyzed} defect(s) in {_format_duration(status.elapsed_seconds)}."
         if status.failed_batches:
