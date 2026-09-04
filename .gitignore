@@ -29,3 +29,10 @@ data/backup-*/
 # Locally generated sample export for exercising the upload flow — synthetic
 # data shouldn't be mistaken for a real extract.
 sample_ado_export.xlsx
+
+# Excel writes a lock file beside any open workbook; it is never source.
+~$*
+
+# Local agent/tooling state, specific to one machine.
+.claude/
+.agents/

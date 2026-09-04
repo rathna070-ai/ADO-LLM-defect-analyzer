@@ -29,6 +29,8 @@ from ado_defect_analysis.pipeline.aggregate import (
 )
 from ado_defect_analysis.pipeline.export import run_export
 
+from . import render_help_link
+
 # Validated categorical slots (light surface): blue, orange, aqua. Adjacent CVD
 # ΔE 9.2, normal-vision 27.6 — both clear. Aqua sits under 3:1 contrast, so
 # anywhere it appears is direct-labelled and backed by a table.
@@ -57,6 +59,7 @@ def render(config: Config) -> None:
             st.query_params.clear()
             st.session_state["page"] = "home"
             st.rerun()
+        render_help_link()
 
     df = load_categorized_dataframe(config)
     if df.empty:

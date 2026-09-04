@@ -18,6 +18,8 @@ from ado_defect_analysis.config import Config
 from ado_defect_analysis.pipeline.fetch import run_fetch_from_excel, run_fetch_from_query
 from ado_defect_analysis.storage import DefectStore
 
+from . import render_help_link
+
 _UPLOAD = "Upload file"
 _QUERY = "ADO link"
 
@@ -60,7 +62,10 @@ def _estimate_seconds(queued: int, batch_size: int) -> float:
 
 
 def render(config: Config) -> None:
-    st.title("AI RCA Analyzer")
+    title, help_link = st.columns([5, 1])
+    title.title("AI RCA Analyzer")
+    with help_link:
+        render_help_link()
 
     _render_source_picker()
     # Defaults to upload rather than staying blank until Start is pressed —
